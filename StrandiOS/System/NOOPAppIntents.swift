@@ -70,15 +70,21 @@ struct MarkMomentIntent: AppIntent {
     }
 }
 
-/// Send a confirming haptic buzz to the strap. Opens the app so the live BLE link can deliver it.
-struct BuzzStrapIntent: AppIntent {
+/// Send a haptic buzz to the strap. Runs in the background when NOOP holds (or brings up) a bonded link, so a
+/// Shortcuts automation such as "When any alarm goes off" can buzz the wrist with the phone locked; otherwise
+/// the buzz is queued and iOS asks to continue in NOOP, which delivers it on opening.
+struct BuzzStrapIntent: AppIntent, ForegroundContinuableIntent {
     static var title: LocalizedStringResource = "Buzz Strap"
     static var description = IntentDescription("Send a haptic buzz to your WHOOP strap.")
-    static var openAppWhenRun = true
+    static var openAppWhenRun = false
 
+    @MainActor
     func perform() async throws -> some IntentResult {
+        if let model = AppModel.current, await model.buzzStrapWhenConnected(timeout: 10) {
+            return .result()
+        }
         PendingIntents.append(.buzz)
-        return .result()
+        throw needsToContinueInForegroundError()
     }
 }
 

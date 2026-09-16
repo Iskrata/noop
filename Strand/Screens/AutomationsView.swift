@@ -46,6 +46,7 @@ struct AutomationsView: View {
     @AppStorage(HapticPrefs.intervals) private var intervalsHaptic = true
     @AppStorage(HapticPrefs.liveSession) private var liveSessionHaptic = true
     @AppStorage(HapticPrefs.workout) private var workoutHaptic = true
+    @AppStorage(IncomingCallBuzzPolicy.enabledKey) private var incomingCallHaptic = false
 
     var body: some View {
         ScreenScaffold(title: "Automations",
@@ -95,8 +96,8 @@ struct AutomationsView: View {
     // MARK: - Haptics (#1115)
 
     /// Per-event opt-in toggles for NOOP's in-session strap buzzes (all default OFF, existing installs
-    /// migrated on). Parity with the Android Automations "Haptics" section. Ambient cues and the
-    /// Android-only call/notification buzzes are not shown here (the latter can't exist on Apple).
+    /// migrated on). Parity with the Android Automations "Haptics" section. Ambient cues are not shown here.
+    /// iOS adds the incoming-call buzz (`IncomingCallBuzzPolicy`); app notifications can't be observed on Apple.
     private var hapticsCard: some View {
         Section2(icon: "waveform.path", title: String(localized: "Haptics"),
                  blurb: String(localized: "Choose which in-session cues buzz your wrist during a breathing session, timer, or workout."),
@@ -117,6 +118,12 @@ struct AutomationsView: View {
                 ToggleRow(label: String(localized: "Workout start & end"),
                           help: String(localized: "A buzz confirms a workout starting and saving."),
                           isOn: $workoutHaptic)
+                #if os(iOS)
+                rowDivider
+                ToggleRow(label: String(localized: "Incoming calls"),
+                          help: String(localized: "Buzz while a phone call rings, until you answer or it ends. Needs NOOP running in the background."),
+                          isOn: $incomingCallHaptic)
+                #endif
             }
         }
     }

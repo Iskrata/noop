@@ -17,6 +17,7 @@ struct StrandiOSApp: App {
     /// UIKit bridge for Home Screen quick actions. SwiftUI keeps ownership of the scene and window.
     @UIApplicationDelegateAdaptor(HomeScreenQuickActionAppDelegate.self) private var appDelegate
     @StateObject private var model: AppModel
+    private let incomingCallBuzz: IncomingCallBuzz
     @StateObject private var health: HealthKitBridge
     /// The phone→watch link. Built + activated here so the watch app actually receives snapshots on a
     /// real device; without an owner that pushes it, the watch only ever shows placeholder data.
@@ -83,6 +84,8 @@ struct StrandiOSApp: App {
         NotificationPresenter.shared.onCoachBriefTapped = { [weak router] in router?.openCoach() }
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
+        AppModel.current = model
+        incomingCallBuzz = IncomingCallBuzz(buzz: { [weak model] in model?.buzz(loops: 2) })
         // The buzz and the strap-gesture claim are injected, so the controller itself knows nothing
         // about BLE and stays testable.
         _liftSession = StateObject(wrappedValue: LiftSessionController(

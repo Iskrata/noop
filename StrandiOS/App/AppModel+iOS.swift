@@ -2,6 +2,21 @@
 import Foundation
 
 extension AppModel {
+    /// The app's model, for App Intents that run in the background process without opening the app.
+    static weak var current: AppModel?
+
+    /// Buzz the strap once it is bonded, waiting up to `timeout` for a link that is still coming up (an intent
+    /// can launch the process cold). Returns false when no bonded link arrived.
+    func buzzStrapWhenConnected(timeout: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !live.bonded {
+            guard Date() < deadline else { return false }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        buzzStrapOnce()
+        return true
+    }
+
     /// Execute any actions queued by App Intents while the app was suspended (mark moment, buzz,
     /// ask coach). Call when the app becomes active. The optional `router` lets the ask-coach
     /// intent navigate to the Coach tab after sending the question.
