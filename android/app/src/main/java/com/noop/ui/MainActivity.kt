@@ -1398,6 +1398,17 @@ object NoopPrefs {
         of(context).edit().putBoolean(KEY_EFFORT_RESCORE_DONE, true).apply()
     }
 
+    /** Whether the one-shot full-history rescore that moved every computed night's resting HR from the lowest
+     *  5-min bin to the deep-sleep mean has run. Twin of Swift `IntelligenceEngine.restingHRRescoreFlagKey`. */
+    const val KEY_RESTING_HR_RESCORE_DONE = "noop.restingHRDeepSleepRescore.v1.done"
+
+    fun restingHrRescoreDone(context: Context): Boolean =
+        of(context).getBoolean(KEY_RESTING_HR_RESCORE_DONE, false)
+
+    fun setRestingHrRescoreDone(context: Context) {
+        of(context).edit().putBoolean(KEY_RESTING_HR_RESCORE_DONE, true).apply()
+    }
+
     /** Whether the one-shot #547 implausible-timestamp heal has run. Set true once it completes so the
      *  on-upgrade purge of bad-strap-clock rows (far-past / future-dated) never re-runs. Re-running is
      *  harmless (the deletes are idempotent), but the flag avoids the work on every launch. */
