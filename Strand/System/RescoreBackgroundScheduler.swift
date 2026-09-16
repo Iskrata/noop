@@ -229,7 +229,10 @@ enum RescoreBackgroundScheduler {
     /// Register the handler. MUST be called from `StrandiOSApp.init()` before launch finishes, and the
     /// identifier MUST be listed in `BGTaskSchedulerPermittedIdentifiers`, or iOS never delivers the task.
     /// Safe to leave uncalled: `schedule()` fails gracefully and the foreground path still scores.
-    static func register(perform operation: @escaping @MainActor () async -> Void) {
+    /// `onExpire` reports iOS reclaiming the processing time before the pass finished. The pass keeps no
+    /// record of it otherwise, so a strap log that simply stops mid-night cannot say why.
+    static func register(perform operation: @escaping @MainActor () async -> Void,
+                         onExpire: @escaping @MainActor () -> Void = {}) {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: taskIdentifier, using: nil) { task in
             let completion = TaskCompletionGuard(task: task)
             let worker = Task { @MainActor in
@@ -243,6 +246,7 @@ enum RescoreBackgroundScheduler {
             }
             task.expirationHandler = {
                 worker.cancel()
+                Task { @MainActor in onExpire() }
                 // The pass did not finish inside the processing budget either. Ask for another rather
                 // than dropping the work, and report the failure so iOS's own scheduling heuristics see
                 // it honestly instead of being told this succeeded.

@@ -98,6 +98,17 @@ final class RescoreBackgroundPolicyTests: XCTestCase {
         XCTAssertEqual(decide(lastSeconds: .infinity), .run)
     }
 
+    /// A measurement no pass could cost is a suspension, not a slow pass. The wall-clock timing banked
+    /// 19 003 s on a phone that slept through an overnight pass, and every background re-score after it
+    /// deferred. Past the ceiling it is unknown, and unknown runs.
+    func testAnImplausibleMeasurementIsReadAsUnknown() {
+        XCTAssertEqual(decide(lastSeconds: 19_003.76), .run)
+        XCTAssertEqual(decide(lastSeconds: RescoreBackgroundPolicy.maxPlausiblePassSeconds + 1), .run)
+        XCTAssertTrue(isDeferred(decide(lastSeconds: RescoreBackgroundPolicy.maxPlausiblePassSeconds)))
+        XCTAssertTrue(isDeferred(decide(unfinished: true, lastSeconds: 19_003.76)),
+                      "an unfinished pass still defers on its own")
+    }
+
     /// A nonsensical budget disables the measurement rule rather than deferring everything — the same
     /// principle, applied to the other input.
     func testANonPositiveBudgetDoesNotDeferEverything() {

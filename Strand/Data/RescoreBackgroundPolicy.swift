@@ -43,6 +43,15 @@ enum RescoreBackgroundPolicy {
     /// mid-write is the one outcome worth spending real caution to avoid.
     static let backgroundBudgetSeconds: Double = 20
 
+    /// The longest measurement that can describe a pass's own cost, in seconds.
+    ///
+    /// The heaviest install on record (#1538) took about eight minutes. A figure far past that is not a
+    /// slow pass but a suspended one: the timing used a wall clock until the uptime clock replaced it, so
+    /// an install still carries whatever an overnight suspension banked (19 003 s on one phone). Read as
+    /// a cost, that value deferred every background re-score after it — and only a completed pass ever
+    /// overwrites it, which is the very thing it prevented.
+    static let maxPlausiblePassSeconds: Double = 30 * 60
+
     /// - Parameters:
     ///   - isBackground: whether the app is currently backgrounded. A foregrounded app is never deferred:
     ///     the user is looking at the screen, there is no suspension deadline, and the existing behaviour
@@ -64,7 +73,8 @@ enum RescoreBackgroundPolicy {
     static func decide(isBackground: Bool,
                        rescoreAlreadyOwed: Bool,
                        lastCompletedPassSeconds: Double?,
-                       budgetSeconds: Double = backgroundBudgetSeconds) -> Decision {
+                       budgetSeconds: Double = backgroundBudgetSeconds,
+                       maxPlausibleSeconds: Double = maxPlausiblePassSeconds) -> Decision {
         guard isBackground else { return .run }
 
         if rescoreAlreadyOwed {
@@ -72,13 +82,14 @@ enum RescoreBackgroundPolicy {
                 reason: "a re-score is already outstanding from an earlier trigger")
         }
 
-        // Only a FINITE, positive measurement can justify deferring. A nil (nothing has ever completed),
-        // a zero, or a NaN/infinity from a corrupted default all mean "unknown", and unknown must fall
-        // through to running: refusing to score on the strength of a value we cannot read would be a far
-        // worse failure than one wasted pass.
+        // Only a FINITE, positive, PLAUSIBLE measurement can justify deferring. A nil (nothing has ever
+        // completed), a zero, a NaN/infinity from a corrupted default, or a figure past
+        // `maxPlausibleSeconds` all mean "unknown", and unknown must fall through to running: refusing to
+        // score on the strength of a value we cannot read would be a far worse failure than one wasted pass.
         if budgetSeconds > 0,
            let measured = lastCompletedPassSeconds,
            measured.isFinite, measured > 0,
+           measured <= maxPlausibleSeconds,
            measured > budgetSeconds {
             return .deferToBackgroundTask(
                 reason: "last completed pass took \(Int(measured.rounded()))s, over the "

@@ -688,6 +688,11 @@ final class AppModel: ObservableObject {
         // The deferred pass is the one that finally produces today's score, and it runs with no UI
         // attached — so publish the snapshot here too, for the same reason the post-offload path does.
         await WidgetSnapshot.publish(from: self)
+        // Apple Health too. The post-offload write-back ran BEFORE this pass (the offload deferred its
+        // re-score here), so it published the store as it stood then: last night's sleep and vitals were
+        // not scored yet and only reached Health on some later foreground. This is the first moment they
+        // exist. The bridge coalesces a call that lands during an in-flight write-back.
+        await healthWriteBack?()
         #endif
     }
 

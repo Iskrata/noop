@@ -731,7 +731,10 @@ final class IntelligenceEngine: ObservableObject {
 
         // #1005: time the whole pass — the trigger line above records WHY; this records how many nights
         // and how long (the CPU cost per run), so a re-score STORM is visible in the strap log.
-        let reScoreStart = Date()
+        // Uptime, not `Date()`: the elapsed figure below is banked as what a pass COSTS, and a wall clock
+        // also counts every minute the process spent suspended mid-pass. One overnight pass suspended by a
+        // sleeping phone banked 19 003 s, which then deferred every background re-score after it.
+        let reScoreStart = DispatchTime.now().uptimeNanoseconds
         computing = true
         // #1538: the pass is now past every gate and will do real work. Mark it started durably, so that a
         // process killed mid-pass leaves evidence a LATER process can read — the killed process itself gets
@@ -2841,7 +2844,7 @@ final class IntelligenceEngine: ObservableObject {
         // measurement is what lets `RescoreBackgroundPolicy` tell an install that finishes comfortably in a
         // background wake from one that never could, instead of guessing from a constant — the cost varies
         // by more than an order of magnitude with history size.
-        let elapsed = Date().timeIntervalSince(reScoreStart)
+        let elapsed = Double(DispatchTime.now().uptimeNanoseconds &- reScoreStart) / 1_000_000_000
         let settled = RescoreBackgroundScheduler.markRescoreCompleted(seconds: elapsed, owedToken: owedToken)
         diagnosticSink?("re-score: done — scored \(scoredNights.count) night(s) in \(Int(elapsed * 1000)) ms (#1005)", nil)
         // #1681: a pass that completes while leaving the mark SET looks identical in a capture to one that
