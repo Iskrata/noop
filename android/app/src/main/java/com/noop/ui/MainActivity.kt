@@ -1105,6 +1105,28 @@ object NoopPrefs {
         of(context).edit().putLong("noop.coachModelsRefreshed.$provider", atMillis).apply()
     }
 
+    /** Master switch for the AI Coach, offered in Settings under Bottom bar because the Coach tab is
+     *  what a wearer sees it as (#2218 promoted Coach to a top-level tab). Default ON, matching every
+     *  install that shipped with the tab.
+     *
+     *  This is NOT tab chrome. Turning it off disables the AI itself: the tab goes, the Today launcher
+     *  card goes, and the daily brief scheduler is cancelled. That last one is why this is a single pref
+     *  rather than a per-surface hide - CoachBriefScheduler is a SEPARATE default-off feature with its
+     *  own `enabled` flag that makes a provider call from the background and posts a notification, so
+     *  hiding only the tab would leave a wearer who had enabled briefs still receiving AI output from a
+     *  feature they had just switched off.
+     *
+     *  Saved provider keys are deliberately KEPT. The switch is meant to be reversible, and wiping a key
+     *  a wearer pasted in would make turning it back on a re-setup rather than a flip. */
+    const val KEY_COACH_ENABLED = "noop.coachEnabled"
+
+    fun coachEnabled(context: Context): Boolean =
+        of(context).getBoolean(KEY_COACH_ENABLED, true)
+
+    fun setCoachEnabled(context: Context, enabled: Boolean) {
+        of(context).edit().putBoolean(KEY_COACH_ENABLED, enabled).apply()
+    }
+
     /** Coach on-device signals (v5): when ON, the opt-in BYO-key Coach's grounding context may include a
      *  SUMMARY-ONLY line of on-device correlations + Lab Book markers (no raw egress). A SECOND opt-in on
      *  top of the existing "let the coach use my data" consent. Default OFF, keeps the anonymity posture. */
@@ -1353,6 +1375,17 @@ object NoopPrefs {
 
     fun setEffortRescoreDone(context: Context) {
         of(context).edit().putBoolean(KEY_EFFORT_RESCORE_DONE, true).apply()
+    }
+
+    /** Whether the one-shot full-history rescore that moved every computed night's resting HR from the lowest
+     *  5-min bin to the deep-sleep mean has run. Twin of Swift `IntelligenceEngine.restingHRRescoreFlagKey`. */
+    const val KEY_RESTING_HR_RESCORE_DONE = "noop.restingHRDeepSleepRescore.v1.done"
+
+    fun restingHrRescoreDone(context: Context): Boolean =
+        of(context).getBoolean(KEY_RESTING_HR_RESCORE_DONE, false)
+
+    fun setRestingHrRescoreDone(context: Context) {
+        of(context).edit().putBoolean(KEY_RESTING_HR_RESCORE_DONE, true).apply()
     }
 
     /** Whether the one-shot #547 implausible-timestamp heal has run. Set true once it completes so the

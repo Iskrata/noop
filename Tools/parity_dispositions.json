@@ -64,6 +64,14 @@
       "identity_sha256": "9ecb620cdc093557e5f70df1bb80d549e71b074e6f575515b66988d590a00374",
       "platform": "swift",
       "rationale": "Gap tolerance for laying out beats in the iOS-only Apple Health heartbeat-series export; Health Connect has no beat-to-beat record type."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::rhrFloorMeanLogLine/4#1",
+      "identity_sha256": "5d72d3b8bf405f100c45e0a3e5e2f9a3a68a557da6620a197e2c6c07d4cf2794",
+      "platform": "kotlin",
+      "rationale": "Its Swift twin, IntelligenceEngine.rhrFloorMeanLogLine (byte-identical line, pinned by IntelligenceRhrFloorMeanTests), lives in the app target under Strand/Data, outside the governed Swift roots, so the ledger cannot pair the two."
     }
   ]
 }
