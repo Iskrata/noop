@@ -49,6 +49,11 @@ final class IntelligenceEngine: ObservableObject {
     /// Uptime the pass holding `computing` started at, and how many days it covers; nil when none is running.
     private var runningPassStart: UInt64?
     private var runningPassDays = 0
+    /// How many `analyzeRecent` passes have run to completion in this process, and how many days the latest
+    /// one covered, so a caller that needs a particular pass can tell whether its call did the work or
+    /// found the lock taken (`runEffortRescoreIfNeeded`).
+    private var completedPasses = 0
+    private var lastCompletedPassDays = 0
     /// #899 heal bound: true while the last heal already re-armed a rescore, so a heal firing again on
     /// the very next pass cannot re-arm a second time (the Android twin is hard-bounded to exactly one
     /// re-pass; this mirrors it). Reset by any pass whose heal finds nothing, restoring the budget.
@@ -625,14 +630,25 @@ final class IntelligenceEngine: ObservableObject {
     @discardableResult
     func runEffortRescoreIfNeeded(historyDays: Int = 4000, flagKey: String = effortRescoreFlagKey) async -> Bool {
         guard !UserDefaults.standard.bool(forKey: flagKey) else { return false }
-        await analyzeRecent(maxDays: historyDays)
-        // Only mark done if the pass actually completed (wasn't skipped because another tick held the
-        // `computing` lock). `computing` is false here once analyzeRecent's `defer` has run; a skipped
-        // call returns with `note` unset by it. Use the lock state: if a concurrent run was in progress
-        // the flag stays unset so the next launch retries , cheap, and correctness over a one-time cost.
-        guard !computing else { return false }
-        UserDefaults.standard.set(true, forKey: flagKey)
-        return true
+        // Wait out a pass that already holds the lock rather than give up until the next launch. This runs
+        // at launch, which is exactly when a strap reconnect starts a post-offload pass, and a busy install
+        // re-arms those back to back: a field log showed the resting-HR rescore still unrun a day after
+        // install, having lost the race on every launch in between.
+        while !Task.isCancelled {
+            while computing && !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+            let passesBefore = completedPasses
+            await analyzeRecent(maxDays: historyDays)
+            // Another trigger can still take the lock between the wait and the call, and then this call
+            // returns without scoring anything. Only a pass at least this wide finishing proves the work
+            // was done.
+            if completedPasses > passesBefore, lastCompletedPassDays >= historyDays {
+                UserDefaults.standard.set(true, forKey: flagKey)
+                return true
+            }
+        }
+        return false
     }
 
     /// UserDefaults flag guarding the one-shot #547 implausible-timestamp DB heal (below). Set once the
@@ -2923,6 +2939,8 @@ final class IntelligenceEngine: ObservableObject {
             elapsedSeconds: elapsed,
             assertionExpiries: RescoreBackgroundScheduler.assertionExpiries - reScoreExpiriesAtStart,
             backgroundedAtEnd: RescoreBackgroundScheduler.isBackgrounded), nil)
+        completedPasses += 1
+        lastCompletedPassDays = maxDays
         // #1681: a pass that completes while leaving the mark SET looks identical in a capture to one that
         // cleared it. Rare-event evidence, so always-on: it costs a line only when it actually happens,
         // and it is exactly what is missing when someone reports the app re-scoring on every launch.
