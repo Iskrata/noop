@@ -101,6 +101,8 @@ public enum StrainScorer {
         switch method {
         case .edwards:
             return strainDenominator
+        case .whoopCalibrated:
+            return whoopCalibratedDenominator
         case .banister:
             let b = sex.lowercased().hasPrefix("f") ? banisterBWomen : banisterBMen
             // Ceiling MINUS a full day of sedentary baseline, matching what is subtracted from the day
@@ -131,7 +133,24 @@ public enum StrainScorer {
     ]
 
     /// TRIMP accumulation method.
-    public enum Method: Sendable, Hashable { case edwards, banister }
+    public enum Method: Sendable, Hashable { case edwards, banister, whoopCalibrated }
+
+    /// %HRR where `.whoopCalibrated` starts earning load. Below it a minute earns nothing; above it a minute
+    /// earns (%HRR − floor) / 10, so 50 % HRR earns 1 and 90 % earns 5 — Edwards' zone weights made
+    /// continuous and moved down one zone.
+    ///
+    /// Fitted (fork-only) to one wearer's WHOOP Day Strain: 23 NOOP days (2026-08-25 to 2026-09-16) against
+    /// 362 WHOOP days (2025-08-23 to 2026-08-23, `physiological_cycles.csv`, × 100/21). No day has both, so
+    /// the fit matches the spread of the two, over a grid of floors 34–46 % and denominators 300–1200.
+    /// Edwards put a quarter of those days under 2.4 where WHOOP's lower quartile is 23.8, because this
+    /// wearer rarely holds 50 % HRR outside a workout; Banister compressed every day into 44–60. This curve
+    /// gives mean 36.4 / p25 22.5 / median 36.0 / p75 50.9 against WHOOP's 37.6 / 23.8 / 32.9 / 51.0.
+    public static let whoopCalibratedFloorHRR: Double = 40.0
+
+    /// `.whoopCalibrated`'s log-map denominator, fitted with `whoopCalibratedFloorHRR`. Unlike the other two
+    /// it is not the recipe's daily ceiling (24 h at 100 % HRR earns 8 640), so the score is clamped at
+    /// `maxStrain`, the way WHOOP's Day Strain tops out at 21.
+    public static let whoopCalibratedDenominator: Double = 600.0
 
     // MARK: - HRmax helpers
 
@@ -261,6 +280,17 @@ public enum StrainScorer {
         for i in hr.indices {
             acc += Double(zoneWeight(Double(hr[i].bpm), restingHR: restingHR, hrReserve: hrReserve))
                 * durations[i]
+        }
+        return acc
+    }
+
+    /// `.whoopCalibrated` load: each minute earns (%HRR − `whoopCalibratedFloorHRR`) / 10, nothing below.
+    static func whoopCalibratedTRIMP(_ hr: [HRSample], restingHR: Double, hrReserve: Double,
+                                     durations: [Double]) -> Double {
+        var acc = 0.0
+        for i in hr.indices {
+            let pct = pctHRR(Double(hr[i].bpm), restingHR: restingHR, hrReserve: hrReserve)
+            acc += max(0, (pct - whoopCalibratedFloorHRR) / 10.0) * durations[i]
         }
         return acc
     }
@@ -467,8 +497,13 @@ public enum StrainScorer {
         case .edwards:
             trimp = edwardsTRIMP(hr, restingHR: restingHR, hrReserve: hrReserve,
                                  durations: durations)
+        case .whoopCalibrated:
+            trimp = whoopCalibratedTRIMP(hr, restingHR: restingHR, hrReserve: hrReserve,
+                                         durations: durations)
         }
-        let scored = trimpToStrain(trimp, denominator: denominator)
+        let scored = method == .whoopCalibrated
+            ? min(maxStrain, trimpToStrain(trimp, denominator: denominator))
+            : trimpToStrain(trimp, denominator: denominator)
         diag?(scoreFunnelLine(day: day, hrSamples: hr.count, enough: enoughData, maxHR: effMax,
                               maxHRProvided: maxHR != nil, restingHR: restingHR, method: method,
                               trimp: trimp, strain: scored))

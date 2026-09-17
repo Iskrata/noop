@@ -580,6 +580,14 @@ final class IntelligenceEngine: ObservableObject {
     /// resting HR it wrote from the old statistic, then clears it.
     static let restingHRHealthRewriteOwedKey = "noop.health.restingHRRewriteOwed.v1"
 
+    /// UserDefaults flag guarding the one-shot full-history rescore onto this fork's WHOOP calibration: sleep
+    /// stages (`SleepStagerV2.Calibration.personal`) and Effort (`StrainScorer.Method.whoopCalibrated`).
+    static let whoopCalibrationRescoreFlagKey = "intelligence.whoopCalibrationRescore.v1.done"
+
+    /// Set once a full-history rescore completes; the Apple Health write-back then reaches back to the first
+    /// computed night once, so nights older than its rolling window are replaced too, and clears it.
+    static let healthHistoryRewriteOwedKey = "noop.health.historyRewriteOwed.v1"
+
     /// One-shot, on-upgrade FULL-history Effort rescore (#313 PART B). The Effort hero gauge + numbers
     /// moved from the old 0–21 axis to NOOP's own 0–100 axis. On-device computed rows since v2.6.1
     /// already store 0–100, but rows the engine computed on an OLDER build (capped at `maxDays` per run,

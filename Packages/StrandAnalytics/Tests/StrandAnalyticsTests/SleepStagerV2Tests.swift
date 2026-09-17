@@ -315,7 +315,8 @@ final class SleepStagerV2Tests: XCTestCase {
                        "flag OFF must reproduce the exact V1 hypnogram labels")
 
         // Flag ON — the SAME detected window must now be staged by V2.
-        let v2Sessions = SleepStager.detectSleep(hr: hr, rr: rr, gravity: grav, useSleepStagerV2: true)
+        let v2Sessions = SleepStager.detectSleep(hr: hr, rr: rr, gravity: grav, useSleepStagerV2: true,
+                                                 v2Calibration: .population)
         XCTAssertEqual(v2Sessions.count, 1, "detection is unchanged by the staging flag")
         let v2 = v2Sessions[0]
         // Same accepted window (detection is identical — only staging differs).
@@ -324,7 +325,7 @@ final class SleepStagerV2Tests: XCTestCase {
         // The hypnogram is V2's: it matches a direct V2 stageSession over the accepted span, and (proof
         // the flag actually flipped the engine) it expresses both deep and REM.
         let v2Direct = SleepStagerV2.stageSession(start: v2.start, end: v2.end,
-                                                  grav: grav, hr: hr, rr: rr, resp: [])
+                                                  grav: grav, hr: hr, rr: rr, resp: [], calibration: .population)
         XCTAssertEqual(v2.stages.map { $0.stage }, v2Direct.map { $0.stage },
                        "flag ON must produce the V2 hypnogram")
         let v2Stages = Set(v2.stages.map { $0.stage })
@@ -371,7 +372,8 @@ final class SleepStagerV2Tests: XCTestCase {
             hr.append(HRSample(ts: ts, bpm: bpm))
             rr.append(RRInterval(ts: ts, rrMs: (60_000 / bpm) + rsaWave(ph, i)))
         }
-        let segs = SleepStagerV2.stageSession(start: start, end: start + dur, grav: grav, hr: hr, rr: rr, resp: [])
+        let segs = SleepStagerV2.stageSession(start: start, end: start + dur, grav: grav, hr: hr, rr: rr, resp: [],
+                                              calibration: .population)
         let golden: [(Int, Int, String)] = [
             (0, 5070, "deep"), (5070, 5310, "light"), (5310, 5550, "rem"),
             (5550, 10740, "light"), (10740, 16290, "rem"), (16290, 21600, "wake")]
@@ -412,5 +414,33 @@ final class SleepStagerV2Tests: XCTestCase {
         // A zeroed entry must reach the lattice as a large finite penalty, never -inf.
         let lp = log(max(SleepStagerV2.transition["awake"]!["deep"]!, 1e-9))
         XCTAssertTrue(lp.isFinite, "a zeroed transition must not produce a non-finite log-weight")
+    }
+}
+
+/// The personal calibration only moves how much evidence deep and REM need; the population recipe is the
+/// one the goldens above pin, and it must stay reachable.
+final class SleepStagerV2CalibrationTests: XCTestCase {
+    func testPopulationCalibrationHasNoOffsets() {
+        XCTAssertEqual(SleepStagerV2.Calibration.population.deepLogBias, 0)
+        XCTAssertEqual(SleepStagerV2.Calibration.population.remLogBias, 0)
+    }
+
+    func testPersonalCalibrationStagesLessDeepAndRemThanPopulation() {
+        let start = 1_750_000_000, dur = 6 * 3_600
+        var grav: [GravitySample] = [], hr: [HRSample] = [], rr: [RRInterval] = []
+        for i in 0..<dur {
+            let bpm = 52 + ((i / 600) % 3) * 4 + ((i / 45) % 2)
+            grav.append(GravitySample(ts: start + i, x: 0, y: 0, z: 1.0))
+            hr.append(HRSample(ts: start + i, bpm: bpm))
+            rr.append(RRInterval(ts: start + i, rrMs: 60_000 / bpm + ((i % 5) - 2) * 15))
+        }
+        func minutes(_ calibration: SleepStagerV2.Calibration, _ stage: String) -> Int {
+            SleepStagerV2.stageSession(start: start, end: start + dur, grav: grav, hr: hr, rr: rr, resp: [],
+                                       calibration: calibration)
+                .filter { $0.stage == stage }.reduce(0) { $0 + ($1.end - $1.start) } / 60
+        }
+        XCTAssertLessThanOrEqual(minutes(.personal, "deep"), minutes(.population, "deep"))
+        XCTAssertLessThanOrEqual(minutes(.personal, "rem"), minutes(.population, "rem"))
+        XCTAssertGreaterThan(minutes(.personal, "light"), minutes(.population, "light"))
     }
 }

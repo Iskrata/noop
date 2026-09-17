@@ -1328,6 +1328,7 @@ public enum SleepStager {
                                    bandSleepState: [(ts: Int, state: Int)] = [],
                                    useSleepStagerV2: Bool = false,
                                    sleepHRBaseline: Double? = nil,
+                                   v2Calibration: SleepStagerV2.Calibration = .personal,
                                    traceSink: ((String) -> Void)? = nil) -> [SleepSession] {
         // Sleep & Rest test mode only: when a trace is requested we MUST run the live ladder, not a
         // memoized result, so each gate verdict is emitted for THIS night. The trace is side-effect-
@@ -1338,7 +1339,8 @@ public enum SleepStager {
             return detectSleepUncached(hr: hr, rr: rr, resp: resp, gravity: gravity,
                                        tzOffsetSeconds: tzOffsetSeconds, wristOff: wristOff,
                                        bandSleepState: bandSleepState, useSleepStagerV2: useSleepStagerV2,
-                                       sleepHRBaseline: sleepHRBaseline, traceSink: traceSink)
+                                       sleepHRBaseline: sleepHRBaseline, v2Calibration: v2Calibration,
+                                       traceSink: traceSink)
         }
         // v7.0.2 perf (#707): the single heaviest analytics call — it sorts the dense full-day gravity
         // stream (~tens of thousands of samples for a worn day), builds the gravity-delta/still spine, and
@@ -1360,12 +1362,14 @@ public enum SleepStager {
             wristOff: StreamFingerprint.of(wristOff, ts: { $0.start }, quant: { $0.end }),
             band: StreamFingerprint.of(bandSleepState, ts: { $0.ts }, quant: { $0.state }),
             v2: useSleepStagerV2,
-            sleepHRBaseline: sleepHRBaseline)
+            sleepHRBaseline: sleepHRBaseline,
+            v2Calibration: v2Calibration)
         return detectSleepCache.value(key) {
             detectSleepUncached(hr: hr, rr: rr, resp: resp, gravity: gravity,
                                 tzOffsetSeconds: tzOffsetSeconds, wristOff: wristOff,
                                 bandSleepState: bandSleepState, useSleepStagerV2: useSleepStagerV2,
-                                sleepHRBaseline: sleepHRBaseline, traceSink: nil)
+                                sleepHRBaseline: sleepHRBaseline, v2Calibration: v2Calibration,
+                                traceSink: nil)
         }
     }
 
@@ -1376,6 +1380,7 @@ public enum SleepStager {
         let wristOff: StreamFingerprint; let band: StreamFingerprint
         let v2: Bool
         let sleepHRBaseline: Double?
+        let v2Calibration: SleepStagerV2.Calibration
     }
     /// ≈ the number of distinct days in a scoring window; FIFO-evicted, holds only small session arrays.
     private static let detectSleepCache = AnalyticsMemoCache<DetectKey, [SleepSession]>(capacity: 40)
@@ -1390,6 +1395,7 @@ public enum SleepStager {
                                             bandSleepState: [(ts: Int, state: Int)],
                                             useSleepStagerV2: Bool,
                                             sleepHRBaseline: Double? = nil,
+                                            v2Calibration: SleepStagerV2.Calibration = .personal,
                                             traceSink: ((String) -> Void)? = nil) -> [SleepSession] {
         let grav = gravity.sorted { $0.ts < $1.ts }
         if grav.count < 2 { return [] }
@@ -1582,7 +1588,7 @@ public enum SleepStager {
             }
             let rawStages = useSleepStagerV2
                 ? SleepStagerV2.stageSession(start: p.start, end: p.end, grav: grav,
-                                             hr: hrS, rr: rrS, resp: respS)
+                                             hr: hrS, rr: rrS, resp: respS, calibration: v2Calibration)
                 : stageSession(start: p.start, end: p.end, grav: grav,
                                hr: hrS, rr: rrS, resp: respS)
             // Band sleep_state WAKE-veto: recover INTERIOR false-wake epochs the strap's OWN band

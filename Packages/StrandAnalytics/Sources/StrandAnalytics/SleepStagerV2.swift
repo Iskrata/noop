@@ -38,7 +38,8 @@ public enum SleepStagerV2 {
     /// consumed — respiration regularity is recovered from the R-R stream (RSA), the path available on both
     /// WHOOP 4 and 5. The recipe stages "wake" naturally (no separate pre-onset / post-wake forcing).
     public static func stageSession(start: Int, end: Int, grav: [GravitySample],
-                                    hr: [HRSample], rr: [RRInterval], resp: [RespSample]) -> [StageSegment] {
+                                    hr: [HRSample], rr: [RRInterval], resp: [RespSample],
+                                    calibration: Calibration = .personal) -> [StageSegment] {
         // v7.0.2 perf (#707): stage each night AT MOST ONCE per (window, input-fingerprint). The post-sync
         // scoring loop and the self-heal restage call this with byte-identical streams across passes; without
         // the cache each call re-allocates the large per-second HR/gravity dictionaries below before
@@ -86,9 +87,11 @@ public enum SleepStagerV2 {
                 StreamFingerprint.gravityQuant(x: $0.x, y: $0.y, z: $0.z)
             }),
             hr: StreamFingerprint.of(hrW, ts: { $0.ts }, quant: { Int($0.bpm) }),
-            rr: StreamFingerprint.of(rrW, ts: { $0.ts }, quant: { Int($0.rrMs) }))
+            rr: StreamFingerprint.of(rrW, ts: { $0.ts }, quant: { Int($0.rrMs) }),
+            calibration: calibration)
         return stageCache.value(key) {
-            stageSessionUncached(start: start, end: end, grav: gravW, hr: hrW, rr: rrW, resp: resp)
+            stageSessionUncached(start: start, end: end, grav: gravW, hr: hrW, rr: rrW, resp: resp,
+                                 calibration: calibration)
         }
     }
 
@@ -122,6 +125,7 @@ public enum SleepStagerV2 {
     private struct V2Key: Hashable {
         let start: Int; let end: Int
         let grav: StreamFingerprint; let hr: StreamFingerprint; let rr: StreamFingerprint
+        let calibration: Calibration
     }
 
     /// ≈ a couple of weeks of distinct nights (incl. re-staged edits); FIFO-evicted, result-only.
@@ -130,11 +134,12 @@ public enum SleepStagerV2 {
     /// The unchanged staging recipe. Split out verbatim from `stageSession` so the public entry can memoize
     /// in front of it; behaviour is byte-identical (a cache miss runs exactly this).
     private static func stageSessionUncached(start: Int, end: Int, grav: [GravitySample],
-                                             hr: [HRSample], rr: [RRInterval], resp: [RespSample]) -> [StageSegment] {
+                                             hr: [HRSample], rr: [RRInterval], resp: [RespSample],
+                                             calibration: Calibration) -> [StageSegment] {
         // The public veneer has already established stable timestamp order before clipping.
         let feats = features(start: start, end: end, grav: grav, hr: hr, rr: rr)
         if feats.isEmpty { return [StageSegment(start: start, end: end, stage: "light")] }
-        let labels = stageEpochs(feats)
+        let labels = stageEpochs(feats, calibration: calibration)
 
         // Tile [start, end] with one segment per staged epoch. The first segment back-fills [start, firstEpoch)
         // and the last extends to `end`; an interior coverage gap is carried by the preceding label. "awake"
@@ -166,6 +171,31 @@ public enum SleepStagerV2 {
     /// Widened 0.20 -> 0.25 by the multi-subject (AAUWSS + sleep-accel LOSO) deep-boundary tune, which
     /// recovers the deep recall the other deep-tightening edits shed while keeping precision up.
     static let deepGateThresh = 0.25
+
+    /// Offsets added to the deep and REM log-emissions, so how much evidence each stage needs can be fitted
+    /// to one wearer without touching the population recipe. An offset on the emission rather than on
+    /// `baseLogPrior` keeps the priors meaning what they say, and leaves the ranking of epochs within a
+    /// night unchanged.
+    public struct Calibration: Hashable, Sendable {
+        public let deepLogBias: Double
+        public let remLogBias: Double
+        public init(deepLogBias: Double, remLogBias: Double) {
+            self.deepLogBias = deepLogBias; self.remLogBias = remLogBias
+        }
+
+        /// The recipe as published: no offsets. The frozen goldens pin this one.
+        public static let population = Calibration(deepLogBias: 0, remLogBias: 0)
+
+        /// This wearer's fit to their WHOOP history (fork-only), the default everywhere a night is staged.
+        ///
+        /// The population recipe staged their nights at deep 28.0 % / REM 39.0 % / light 32.9 % of time
+        /// asleep, against deep 19.6 % / REM 28.7 % / light 51.8 % over 355 WHOOP nights (2025-08-23 to
+        /// 2026-08-23, `sleeps.csv`, naps excluded). No night has both, so the fit matches each stage's
+        /// share across 24 NOOP nights (2026-08-24 to 2026-09-16, replayed through
+        /// `SleepStager.detectSleep` with V2) rather than night against night. These offsets give deep 19.6
+        /// / REM 28.6 / light 51.8, with deep at 97 ± 14 min a night against WHOOP's 95 ± 19.
+        public static let personal = Calibration(deepLogBias: -0.60, remLogBias: -0.30)
+    }
     static let deepGateSlope = 5.0
 
     /// Motion thresholds are RELATIVE to each night's own quiescent jerk floor (the median per-second
@@ -539,7 +569,7 @@ public enum SleepStagerV2 {
     /// one Viterbi over an already-built lattice, not a second featurisation, and `stageSession` memoizes the
     /// whole thing anyway. When no sustained run exists the origin falls back to the window start, which is
     /// exactly the origin the shipped `c`-based guard used.
-    static func stageEpochs(_ feats: [Epoch]) -> [String] {
+    static func stageEpochs(_ feats: [Epoch], calibration: Calibration = .personal) -> [String] {
         if feats.isEmpty { return [] }
 
         // Per-night z-score over the present values (population std; 0 std → 1 so a flat channel is neutral).
@@ -578,8 +608,8 @@ public enum SleepStagerV2 {
             let awakeCardiac0 = 0.8 * zhvv + 0.4 * zhrv
             let awakeCardiac = motionQuiescent(f) ? min(0.0, awakeCardiac0) : awakeCardiac0
             var em: [String: Double] = [
-                "deep": -1.1 * zhvv - 0.5 * zmvv - gate + baseLogPrior["deep"]!,
-                "rem": 0.6 * zhvv - 0.6 * zmvv + 0.4 * zhrv + baseLogPrior["rem"]!,
+                "deep": -1.1 * zhvv - 0.5 * zmvv - gate + baseLogPrior["deep"]! + calibration.deepLogBias,
+                "rem": 0.6 * zhvv - 0.6 * zmvv + 0.4 * zhrv + baseLogPrior["rem"]! + calibration.remLogBias,
                 "light": baseLogPrior["light"]!,
                 "awake": 1.0 * zmvv + awakeCardiac + baseLogPrior["awake"]!,
             ]

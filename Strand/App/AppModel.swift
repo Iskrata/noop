@@ -466,6 +466,11 @@ final class AppModel: ObservableObject {
             if await self.intelligence.runEffortRescoreIfNeeded(flagKey: IntelligenceEngine.restingHRRescoreFlagKey) {
                 UserDefaults.standard.set(true, forKey: IntelligenceEngine.restingHRHealthRewriteOwedKey)
             }
+            // One-shot rescore onto the WHOOP calibration (sleep stages and Effort), then have Apple Health
+            // replace every night it was given before.
+            if await self.intelligence.runEffortRescoreIfNeeded(flagKey: IntelligenceEngine.whoopCalibrationRescoreFlagKey) {
+                UserDefaults.standard.set(true, forKey: IntelligenceEngine.healthHistoryRewriteOwedKey)
+            }
             while !Task.isCancelled {
                 // #547 RE-POLLUTION: a sync since the last tick may have armed a re-heal (its ingest gate
                 // dropped bad-clock records). `runTimestampHealIfNeeded` honours the pending flag even after

@@ -193,3 +193,36 @@ final class StrainScorerTests: XCTestCase {
                              "a lower measured resting puts the same HR in a higher zone, so Effort rises")
     }
 }
+
+/// The WHOOP-fitted Effort curve (fork-only): nothing below the floor, linear load above it, clamped at the top.
+final class StrainScorerWhoopCalibratedTests: XCTestCase {
+    private func steady(_ bpm: Int, minutes: Int) -> [HRSample] {
+        (0..<(minutes * 60)).map { HRSample(ts: 1_000_000 + $0, bpm: bpm) }
+    }
+
+    func testAnHourAtTheFloorEarnsNothing() {
+        // rest 50, max 190: reserve 140, 40 % HRR = 106 bpm.
+        let s = StrainScorer.strain(steady(106, minutes: 60), maxHR: 190, restingHR: 50, method: .whoopCalibrated)
+        XCTAssertEqual(s, 0)
+    }
+
+    func testAnHourAtHalfTheReserveEarnsOneUnitAMinute() {
+        // 50 % HRR = 120 bpm earns 1 a minute: TRIMP ≈ 60, strain = 100·ln(61)/ln(600).
+        let s = StrainScorer.strain(steady(120, minutes: 60), maxHR: 190, restingHR: 50, method: .whoopCalibrated)
+        XCTAssertEqual(s ?? -1, 100 * log(61) / log(600), accuracy: 0.2)
+    }
+
+    func testAnExtremeDayIsClampedAtTheTopOfTheScale() {
+        let s = StrainScorer.strain(steady(190, minutes: 600), maxHR: 190, restingHR: 50, method: .whoopCalibrated)
+        XCTAssertEqual(s, StrainScorer.maxStrain)
+    }
+
+    func testWhoopCalibratedScoresAnEasyDayAboveEdwards() {
+        // 45 % HRR (113 bpm) for three hours: under Edwards' first zone, but real load for WHOOP.
+        let hr = steady(113, minutes: 180)
+        let calibrated = StrainScorer.strain(hr, maxHR: 190, restingHR: 50, method: .whoopCalibrated) ?? 0
+        let edwards = StrainScorer.strain(hr, maxHR: 190, restingHR: 50, method: .edwards) ?? 0
+        XCTAssertEqual(edwards, 0)
+        XCTAssertGreaterThan(calibrated, 40)
+    }
+}
