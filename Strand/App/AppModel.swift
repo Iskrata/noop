@@ -208,6 +208,9 @@ final class AppModel: ObservableObject {
     /// session. Mirrors how `SourceCoordinator` drives the WRITE side off the same publisher. Retained for
     /// the app's lifetime (the registry outlives the session); `removeDuplicates` collapses redundant emits.
     private var readSpineCancellable: AnyCancellable?
+    /// Re-arms the stale-sync alert when straps are added, archived or removed, so removing the only strap
+    /// cancels a pending "not syncing" notice instead of letting it fire.
+    private var staleSyncRegistryCancellable: AnyCancellable?
     /// Daily re-arm timer for the single-instant firmware smart alarm (see scheduleDailySmartAlarmRearm).
     private var smartAlarmRearmTimer: Timer?
 
@@ -654,6 +657,12 @@ final class AppModel: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] id in
                 Task { await self?.adoptActiveDevice(id) }
+            }
+        staleSyncRegistryCancellable = registry.$devices
+            .dropFirst()
+            .sink { [weak self] _ in
+                // `@Published` emits before the value lands; re-arm on the next turn so it reads the new list.
+                DispatchQueue.main.async { self?.armStaleSyncAlert() }
             }
     }
 

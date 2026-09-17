@@ -72,6 +72,110 @@
       "identity_sha256": "5d72d3b8bf405f100c45e0a3e5e2f9a3a68a557da6620a197e2c6c07d4cf2794",
       "platform": "kotlin",
       "rationale": "Its Swift twin, IntelligenceEngine.rhrFloorMeanLogLine (byte-identical line, pinned by IntelligenceRhrFloorMeanTests), lives in the app target under Strand/Data, outside the governed Swift roots, so the ledger cannot pair the two."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStagerV2.swift::personal",
+      "identity_sha256": "0b12c1c8118e17f6f1f9e888452ade8ca41ba63f96e408780d3945434d5ed1c3",
+      "platform": "swift",
+      "rationale": "Fork-only personal calibration of sleep staging and Effort to one wearer's WHOOP history (Iskrata/noop); Swift-only by the fork's policy, not proposed upstream."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStagerV2.swift::population",
+      "identity_sha256": "952b2c9e8d635fe9bd848eef218daa99c599144ff865d3f1dccc763a9318df5a",
+      "platform": "swift",
+      "rationale": "Fork-only personal calibration of sleep staging and Effort to one wearer's WHOOP history (Iskrata/noop); Swift-only by the fork's policy, not proposed upstream."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/StrainScorer.swift::whoopCalibratedDenominator",
+      "identity_sha256": "f0d4d327e8b4cfc3df895740c44fe815c599fc33c7596bb2000b34eef5d06a5e",
+      "platform": "swift",
+      "rationale": "Fork-only personal calibration of sleep staging and Effort to one wearer's WHOOP history (Iskrata/noop); Swift-only by the fork's policy, not proposed upstream."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/StrainScorer.swift::whoopCalibratedFloorHRR",
+      "identity_sha256": "9fcad45cf83f95e9915437ff0ed8ff7afdb116f080d0c151c91c05dccaac40a7",
+      "platform": "swift",
+      "rationale": "Fork-only personal calibration of sleep staging and Effort to one wearer's WHOOP history (Iskrata/noop); Swift-only by the fork's policy, not proposed upstream."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandImport/Sources/StrandImport/HealthWriteback.swift::openNightMarginSeconds",
+      "identity_sha256": "7f2231de6355adc6b5897cb6f0addc8b708bf08dd0277f465dcb794f4fd29b2a",
+      "platform": "swift",
+      "rationale": "Used only by the iOS HealthKitBridge write-back to hold a still-open night out of Apple Health; the Android Health Connect exporter does not call it."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandImport/Sources/StrandImport/HealthWriteback.swift::openNightMaxHoldSeconds",
+      "identity_sha256": "a497335d1554bb0604aa79b1ae05fedaca8d0a812141c038e7e5151d2a8348e5",
+      "platform": "swift",
+      "rationale": "Used only by the iOS HealthKitBridge write-back to hold a still-open night out of Apple Health; the Android Health Connect exporter does not call it."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager.swift::detectSleep/11#1",
+      "identity_sha256": "b5012b6b321ff41a20c7e85ce875d2aaacfb0d7da6d5edfe779c69d5e821293c",
+      "platform": "swift",
+      "rationale": "Fork-only personal calibration of sleep staging and Effort to one wearer's WHOOP history (Iskrata/noop); Swift-only by the fork's policy, not proposed upstream."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager.swift::detectSleepUncached/11#1",
+      "identity_sha256": "ec050efe0bd1c9f94c204afa2ab7881f92322347086d9931a79f93ed92bfa558",
+      "platform": "swift",
+      "rationale": "Fork-only personal calibration of sleep staging and Effort to one wearer's WHOOP history (Iskrata/noop); Swift-only by the fork's policy, not proposed upstream."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStagerV2.swift::stageEpochs/2#1",
+      "identity_sha256": "c0515ee08513f0843419d0ad4c839e780d5d3e716d658c7608df2c73efcd6e62",
+      "platform": "swift",
+      "rationale": "Fork-only personal calibration of sleep staging and Effort to one wearer's WHOOP history (Iskrata/noop); Swift-only by the fork's policy, not proposed upstream."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStagerV2.swift::stageSession/7#1",
+      "identity_sha256": "e1772d3a6b3699ca30753a2af778f9c08dbd492b35ad41e76ad78d6912d18334",
+      "platform": "swift",
+      "rationale": "Fork-only personal calibration of sleep staging and Effort to one wearer's WHOOP history (Iskrata/noop); Swift-only by the fork's policy, not proposed upstream."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStagerV2.swift::stageSessionUncached/7#1",
+      "identity_sha256": "d9e9c7c36b00c12143542269deb7161a42ed2dd7c5518753e00438aea4a34346",
+      "platform": "swift",
+      "rationale": "Fork-only personal calibration of sleep staging and Effort to one wearer's WHOOP history (Iskrata/noop); Swift-only by the fork's policy, not proposed upstream."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/StrainScorer.swift::whoopCalibratedTRIMP/4#1",
+      "identity_sha256": "1cadd3987286b65c2e56eb72597f4d79e888929d55fd11443083f23a7b309aef",
+      "platform": "swift",
+      "rationale": "Fork-only personal calibration of sleep staging and Effort to one wearer's WHOOP history (Iskrata/noop); Swift-only by the fork's policy, not proposed upstream."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandImport/Sources/StrandImport/HealthWriteback.swift::nightIsStillOpen/3#1",
+      "identity_sha256": "88a1bdfb13c227664f15d962fb6d41a5733fb4c2956e445e42c5e4d495bde0cb",
+      "platform": "swift",
+      "rationale": "Used only by the iOS HealthKitBridge write-back to hold a still-open night out of Apple Health; the Android Health Connect exporter does not call it."
     }
   ]
 }
