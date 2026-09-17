@@ -104,8 +104,10 @@ enum PuffinExperiment {
 
     static var banisterEffortEnabled: Bool { UserDefaults.standard.bool(forKey: banisterEffortKey) }
 
-    /// The TRIMP recipe every Effort computation on this device should use.
-    static var effortMethod: StrainScorer.Method { banisterEffortEnabled ? .banister : .edwards }
+    /// The TRIMP recipe every Effort computation on this device should use. Without the Banister toggle this
+    /// fork scores on the curve fitted to the wearer's WHOOP Day Strain (`StrainScorer.whoopCalibratedFloorHRR`)
+    /// rather than Edwards' zones.
+    static var effortMethod: StrainScorer.Method { banisterEffortEnabled ? .banister : .whoopCalibrated }
 
     /// Opt-in "Continuous HRV capture": hold the dense realtime HR stream armed even with no Live screen
     /// open, so the strap banks beat-to-beat R-R intervals 24/7 for far better overnight HRV/recovery/

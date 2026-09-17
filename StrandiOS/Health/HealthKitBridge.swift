@@ -777,8 +777,14 @@ final class HealthKitBridge: ObservableObject {
     /// (no metadata, no delete) flooded Health with duplicates on every `sync()`.
     ///
     /// Throws on save failure so the caller can decide whether to advance `lastSync`.
-    private func writeBack(whoopStore: WhoopStore, days: Int = 14) async throws {
+    private func writeBack(whoopStore: WhoopStore, days rollingDays: Int = 14) async throws {
         guard auth == .authorized else { return }
+        // A full-history rescore (`IntelligenceEngine.healthHistoryRewriteOwedKey`) changed nights older than
+        // the rolling window, so reach back to NOOP's first computed night once.
+        let historyRewrite = UserDefaults.standard.bool(forKey: IntelligenceEngine.healthHistoryRewriteOwedKey)
+        let days = historyRewrite
+            ? await computedHistoryDays(whoopStore: whoopStore, minDays: rollingDays)
+            : rollingDays
         let now = Date()
         guard let fromDate = Calendar.current.date(byAdding: .day, value: -days, to: now) else { return }
         let fromTs = Int(fromDate.timeIntervalSince1970)
@@ -835,6 +841,20 @@ final class HealthKitBridge: ObservableObject {
         await attempt { try await writeHeartRate(whoopStore: whoopStore, fromTs: fromTs, nowTs: nowTs) }
         await attempt { try await writeWorkouts(whoopStore: whoopStore, fromTs: fromTs, toTs: nowTs) }
         if let firstError { throw firstError }
+        if historyRewrite {
+            UserDefaults.standard.removeObject(forKey: IntelligenceEngine.healthHistoryRewriteOwedKey)
+            log?("health: rewrote \(days) day(s) of history after a full rescore")
+        }
+    }
+
+    /// Days back to NOOP's first computed night, at least `minDays`.
+    private func computedHistoryDays(whoopStore: WhoopStore, minDays: Int) async -> Int {
+        let computedDays = (try? await whoopStore.dailyMetrics(deviceId: computedDeviceId, from: "0000-01-01",
+                                                               to: "9999-12-31")) ?? []
+        let firstComputed = computedDays.map { $0.day }.min().flatMap { HealthKitBridge.date(from: $0) }
+        let span = firstComputed
+            .map { (Calendar.current.dateComponents([.day], from: $0, to: Date()).day ?? 0) + 1 } ?? 0
+        return max(minDays, span)
     }
 
     /// UserDefaults key for the #1503 stranded-records sweep completion set. Stores the set of
@@ -914,12 +934,7 @@ final class HealthKitBridge: ObservableObject {
     /// scheme; then the vitals are written across the same span.
     private func rewriteRestingHR(whoopStore: WhoopStore, minDays: Int, sessions: [CachedSleepSession],
                                   holdingDays: Set<String>) async throws {
-        let computedDays = (try? await whoopStore.dailyMetrics(deviceId: computedDeviceId, from: "0000-01-01",
-                                                               to: "9999-12-31")) ?? []
-        let firstComputed = computedDays.map { $0.day }.min().flatMap { HealthKitBridge.date(from: $0) }
-        let span = firstComputed
-            .map { (Calendar.current.dateComponents([.day], from: $0, to: Date()).day ?? 0) + 1 } ?? 0
-        let days = max(minDays, span)
+        let days = await computedHistoryDays(whoopStore: whoopStore, minDays: minDays)
         if let type = HKQuantityType.quantityType(forIdentifier: .restingHeartRate),
            store.authorizationStatus(for: type) == .sharingAuthorized,
            let from = Calendar.current.date(byAdding: .day, value: -days, to: Date()) {
