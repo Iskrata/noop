@@ -73,6 +73,9 @@ final class HealthKitBridge: ObservableObject {
     /// `noopDeviceId` daily row, so those metrics exist ONLY here.
     private var computedDeviceId: String { noopDeviceId + "-noop" }
 
+    /// Strap-log sink for write-back outcomes (set by the app). A failed step is otherwise only visible in `lastError`.
+    var log: ((String) -> Void)?
+
     init(repo: Repository, appleDeviceId: String, noopDeviceId: String) {
         self.repo = repo
         self.appleDeviceId = appleDeviceId
@@ -773,7 +776,10 @@ final class HealthKitBridge: ObservableObject {
 
         var firstError: Error?
         func attempt(_ op: () async throws -> Void) async {
-            do { try await op() } catch { if firstError == nil { firstError = error } }
+            do { try await op() } catch {
+                log?("health: write-back step failed — \(error.localizedDescription)")
+                if firstError == nil { firstError = error }
+            }
         }
         // #1503: one-off sweep to clear records stranded under the OLD device-id-keyed scheme.
         // The old keys embedded the active strap id (`noop:<deviceId>:<kind>:<identity>`), which
@@ -1069,7 +1075,10 @@ final class HealthKitBridge: ObservableObject {
     /// fingerprint is recorded only after the whole night is written, so a failure mid-night retries.
     private func writeHeartbeats(whoopStore: WhoopStore, sessions: [CachedSleepSession]) async throws {
         let type = HKSeriesType.heartbeat()
-        guard store.authorizationStatus(for: type) == .sharingAuthorized else { return }
+        guard store.authorizationStatus(for: type) == .sharingAuthorized else {
+            log?("health heartbeat: skipped, share status \(store.authorizationStatus(for: type).rawValue)")
+            return
+        }
         let nowTs = Int(Date().timeIntervalSince1970)
         let strictWhoop5 = (try? await whoopStore.isWhoop5RRSource(deviceId: noopDeviceId)) ?? true
         var nights: [(key: String, fingerprint: String?)] = []
@@ -1091,6 +1100,8 @@ final class HealthKitBridge: ObservableObject {
         }
         let written = UserDefaults.standard.dictionary(forKey: Self.heartbeatWrittenKey) as? [String: String] ?? [:]
         let plan = HealthWriteback.heartbeatSyncPlan(nights: nights, written: written)
+        log?("health heartbeat: nights=\(nights.count) exportable=\(beatsByKey.count) rewrite=\(plan.rewrite.count) "
+             + "clear=\(plan.clear.count) kept=\(plan.kept.count)")
         var record = plan.kept
         UserDefaults.standard.set(record, forKey: Self.heartbeatWrittenKey)
 
@@ -1122,6 +1133,7 @@ final class HealthKitBridge: ObservableObject {
             }
             record[night.key] = night.fingerprint
             UserDefaults.standard.set(record, forKey: Self.heartbeatWrittenKey)
+            log?("health heartbeat: wrote night \(night.key) (\(beats.ts.count) beats)")
         }
     }
 

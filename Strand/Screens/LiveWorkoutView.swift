@@ -235,50 +235,9 @@ struct LiveWorkoutView: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// Zone status capsule + rail + caption — same zone derivation and copy; capsule sits on the
-    /// HR ZONE header row instead of beside the heart-rate value.
+    /// Zone status capsule + rail + caption (`HRZoneSection`, shared with the Zones tab).
     private var zoneSection: some View {
-        let tint = zone >= 1 ? StrandPalette.hrZoneColor(zone) : StrandPalette.effortColor
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("HR ZONE")
-                    .font(StrandFont.overline).tracking(StrandFont.overlineTracking)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                Spacer()
-                Text(zone >= 1 ? "Zone \(zone) · \(Self.zoneName(zone))" : "Below Zone 1")
-                    .font(StrandFont.captionNumber)
-                    .foregroundStyle(tint)
-                    .multilineTextAlignment(.trailing)
-                    .padding(.horizontal, NoopMetrics.space2)
-                    .padding(.vertical, NoopMetrics.space1)
-                    .background(tint.opacity(0.12), in: Capsule())
-            }
-            HStack(spacing: 6) {
-                ForEach(1...5, id: \.self) { z in
-                    let active = z == zone
-                    let color = StrandPalette.hrZoneColor(z)
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(active ? color : color.opacity(0.18))
-                        .frame(height: active ? 44 : 34)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(active ? color : StrandPalette.hairline, lineWidth: 1)
-                        )
-                        .overlay(
-                            Text("Z\(z)")
-                                .font(StrandFont.captionNumber)
-                                .foregroundStyle(active ? StrandPalette.surfaceBase : StrandPalette.textTertiary)
-                        )
-                }
-            }
-            if let band = zoneSet.zones.first(where: { $0.number == zone }) {
-                Text("Zone \(zone): \(Int(band.lower))-\(Int(band.upper)) bpm (\(Int(band.lowerPct * 100))-\(Int(band.upperPct * 100))% max HR)")
-                    .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
-            } else {
-                Text("Warming up. Keep moving to climb into Zone 1.")
-                    .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
-            }
-        }
+        HRZoneSection(zone: zone, zoneSet: zoneSet)
     }
 
     private var statsGrid: some View {
@@ -461,17 +420,6 @@ struct LiveWorkoutView: View {
     /// already pause-aware (`workout.elapsed()`); only the formatting was the odd one out.
     private static func elapsed(seconds: TimeInterval) -> String {
         ActiveWorkoutClock.clock(Int(seconds))
-    }
-
-    private static func zoneName(_ zone: Int) -> String {
-        switch zone {
-        case 1: return String(localized: "Recovery")
-        case 2: return String(localized: "Fat burn")
-        case 3: return String(localized: "Aerobic")
-        case 4: return String(localized: "Threshold")
-        case 5: return String(localized: "Maximum")
-        default: return ""
-        }
     }
 }
 
