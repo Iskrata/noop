@@ -477,13 +477,19 @@ final class AppModel: ObservableObject {
             // One-shot resting-HR rescore: every computed night's resting HR moved from the lowest 5-min bin to
             // the deep-sleep mean, so recompute the full history once and have Apple Health replace what it was
             // given from the old statistic.
-            if await self.intelligence.runEffortRescoreIfNeeded(flagKey: IntelligenceEngine.restingHRRescoreFlagKey) {
-                UserDefaults.standard.set(true, forKey: IntelligenceEngine.restingHRHealthRewriteOwedKey)
-            }
             // One-shot rescore onto the WHOOP calibration (sleep stages and Effort), then have Apple Health
-            // replace every night it was given before.
+            // replace every night it was given before. Runs first: a resting-HR rescore still owed is covered
+            // by the same full-history pass, so it is marked done with it rather than paying for a second one.
+            let restingHROwed = !UserDefaults.standard.bool(forKey: IntelligenceEngine.restingHRRescoreFlagKey)
             if await self.intelligence.runEffortRescoreIfNeeded(flagKey: IntelligenceEngine.whoopCalibrationRescoreFlagKey) {
                 UserDefaults.standard.set(true, forKey: IntelligenceEngine.healthHistoryRewriteOwedKey)
+                if restingHROwed {
+                    UserDefaults.standard.set(true, forKey: IntelligenceEngine.restingHRRescoreFlagKey)
+                    UserDefaults.standard.set(true, forKey: IntelligenceEngine.restingHRHealthRewriteOwedKey)
+                }
+            }
+            if await self.intelligence.runEffortRescoreIfNeeded(flagKey: IntelligenceEngine.restingHRRescoreFlagKey) {
+                UserDefaults.standard.set(true, forKey: IntelligenceEngine.restingHRHealthRewriteOwedKey)
             }
             while !Task.isCancelled {
                 // #547 RE-POLLUTION: a sync since the last tick may have armed a re-heal (its ingest gate
