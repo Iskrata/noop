@@ -41,6 +41,11 @@ struct NOOPWidgetView: View {
 
     private var snap: WidgetSnapshot { entry.snapshot }
 
+    /// Mirrors the app's `ScoreVisibility.hidden` (#hide-scores), bridged into the App Group snapshot
+    /// since this extension runs in a separate process from the app and cannot read its plain
+    /// `UserDefaults.standard`. `nil` (an older snapshot / never published) reads as unhidden.
+    private var scoresHidden: Bool { snap.hideScores == true }
+
     var body: some View {
         switch family {
         case .accessoryCircular:
@@ -82,7 +87,11 @@ struct NOOPWidgetView: View {
 
     private var inlineText: String {
         var parts: [String] = []
-        if let r = snap.recovery { parts.append("Charge \(r)%") }
+        if scoresHidden {
+            if let hrv = snap.hrv { parts.append("HRV \(hrv)ms") }
+        } else if let r = snap.recovery {
+            parts.append("Charge \(r)%")
+        }
         if let b = snap.bpm { parts.append("\(b) bpm") }
         return parts.isEmpty ? "NOOP" : parts.joined(separator: " · ")
     }
@@ -90,16 +99,30 @@ struct NOOPWidgetView: View {
     // MARK: - Lock Screen accessories
 
     private var recoveryGauge: some View {
-        Gauge(value: Double(snap.recovery ?? 0), in: 0...100) {
-            Image(systemName: "heart.fill")
-        } currentValueLabel: {
-            Text(snap.recovery.map { "\($0)" } ?? "–")
+        Group {
+            if scoresHidden {
+                // No score to gauge — a plain resting-HR read-out in the same accessory shape.
+                Gauge(value: 0, in: 0...1) {
+                    Image(systemName: "bed.double.fill")
+                } currentValueLabel: {
+                    Text(snap.restingHr.map { "\($0)" } ?? "–")
+                }
+                .gaugeStyle(.accessoryCircular)
+                .tint(StrandPalette.textTertiary)
+            } else {
+                Gauge(value: Double(snap.recovery ?? 0), in: 0...100) {
+                    Image(systemName: "heart.fill")
+                } currentValueLabel: {
+                    Text(snap.recovery.map { "\($0)" } ?? "–")
+                }
+                .gaugeStyle(.accessoryCircular)
+                .tint(chargeColor)
+            }
         }
-        .gaugeStyle(.accessoryCircular)
-        .tint(chargeColor)
     }
 
-    /// Lock-Screen rectangular accessory: Charge · Effort · Rest, same trio as the Home Screen rings.
+    /// Lock-Screen rectangular accessory: Charge · Effort · Rest (or, when hidden, HRV · HR · RHR), same
+    /// trio as the Home Screen rings/`rawMetricsRow`.
     private var rectangular: some View {
         // The lock screen gives this family roughly 72pt of height for everything. A "NOOP" title spent
         // a whole row of that restating which widget the user chose to add, leaving the three scores —
@@ -113,12 +136,21 @@ struct NOOPWidgetView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
             HStack(alignment: .top, spacing: 0) {
-                accessoryScore("Charge", symbol: "figure.mind.and.body",
-                               text: snap.recovery.map { "\($0)%" }, tint: chargeColor)
-                accessoryScore("Effort", symbol: "figure.strengthtraining.traditional",
-                               text: effortText, tint: effortColor)
-                accessoryScore("Rest", symbol: "moon.fill",
-                               text: snap.rest.map { "\($0)%" }, tint: restColor)
+                if scoresHidden {
+                    accessoryScore("HRV", symbol: "waveform.path.ecg",
+                                   text: snap.hrv.map { "\($0)ms" }, tint: StrandPalette.chargeColor)
+                    accessoryScore("HR", symbol: "heart.fill",
+                                   text: snap.bpm.map { "\($0)" }, tint: StrandPalette.effortColor)
+                    accessoryScore("RHR", symbol: "bed.double.fill",
+                                   text: snap.restingHr.map { "\($0)" }, tint: StrandPalette.restColor)
+                } else {
+                    accessoryScore("Charge", symbol: "figure.mind.and.body",
+                                   text: snap.recovery.map { "\($0)%" }, tint: chargeColor)
+                    accessoryScore("Effort", symbol: "figure.strengthtraining.traditional",
+                                   text: effortText, tint: effortColor)
+                    accessoryScore("Rest", symbol: "moon.fill",
+                                   text: snap.rest.map { "\($0)%" }, tint: restColor)
+                }
             }
         }
     }
@@ -180,7 +212,11 @@ struct NOOPWidgetView: View {
         VStack(spacing: 6) {
             headerRow
             // 40pt × 3 = 120 ≤ 128 (SE) / 138 (15 Pro) content widths after 10pt padding.
-            scoreRings(diameter: 40, lineWidth: 4, labelFont: .system(size: 9, weight: .medium))
+            if scoresHidden {
+                rawMetricsRow(diameter: 40, lineWidth: 4, labelFont: .system(size: 9, weight: .medium))
+            } else {
+                scoreRings(diameter: 40, lineWidth: 4, labelFont: .system(size: 9, weight: .medium))
+            }
             Spacer(minLength: 0)
             vitalsFooter(compact: true)
         }
@@ -193,7 +229,11 @@ struct NOOPWidgetView: View {
     private var medium: some View {
         VStack(spacing: 8) {
             headerRow
-            scoreRings(diameter: 72, lineWidth: 7, labelFont: .caption2)
+            if scoresHidden {
+                rawMetricsRow(diameter: 72, lineWidth: 7, labelFont: .caption2)
+            } else {
+                scoreRings(diameter: 72, lineWidth: 7, labelFont: .caption2)
+            }
             Spacer(minLength: 0)
             vitalsFooter(compact: false)
         }
@@ -202,11 +242,16 @@ struct NOOPWidgetView: View {
 
     // MARK: - Home Screen: systemLarge
 
-    /// Rings on top, then the richer stat grid (HRV, RHR, live HR, battery) — "show me more".
+    /// Rings on top, then the richer stat grid (HRV, RHR, live HR, battery) — "show me more". When
+    /// scores are hidden the rings are dropped rather than swapped to a raw-metric row: the grid below
+    /// already shows HRV/RHR/HR/Battery, and rings on top of the SAME numbers would just repeat them
+    /// (#hide-scores).
     private var large: some View {
         VStack(alignment: .leading, spacing: 12) {
             headerRow
-            scoreRings(diameter: 88, lineWidth: 8, labelFont: .caption)
+            if !scoresHidden {
+                scoreRings(diameter: 88, lineWidth: 8, labelFont: .caption)
+            }
             Divider()
             HStack(alignment: .top, spacing: 0) {
                 statCell("HRV", value: snap.hrv.map { "\($0)" }, unit: "ms",
@@ -276,6 +321,30 @@ struct NOOPWidgetView: View {
                 lineWidth: lineWidth,
                 labelFont: labelFont,
                 accessibilityOutOf: 100
+            )
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// `scoresHidden` substitute for `scoreRings`: raw measurements (HRV, resting HR, live HR) at the
+    /// same footprint, in the same Charge/Effort/Rest column order and tints, so the Home Screen layout
+    /// never reflows between the two states (#hide-scores).
+    private func rawMetricsRow(diameter: CGFloat, lineWidth: CGFloat, labelFont: Font) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            WidgetScoreRing(
+                text: snap.hrv.map(String.init), fraction: snap.hrv.map { min(1, Double($0) / 120) },
+                label: "HRV", color: StrandPalette.chargeColor, diameter: diameter, lineWidth: lineWidth,
+                labelFont: labelFont, rawUnit: "milliseconds"
+            )
+            WidgetScoreRing(
+                text: snap.bpm.map(String.init), fraction: snap.bpm.map { min(1, Double($0) / 180) },
+                label: "HR", color: StrandPalette.effortColor, diameter: diameter, lineWidth: lineWidth,
+                labelFont: labelFont, rawUnit: "beats per minute"
+            )
+            WidgetScoreRing(
+                text: snap.restingHr.map(String.init), fraction: snap.restingHr.map { min(1, Double($0) / 100) },
+                label: "RHR", color: StrandPalette.restColor, diameter: diameter, lineWidth: lineWidth,
+                labelFont: labelFont, rawUnit: "beats per minute"
             )
         }
         .frame(maxWidth: .infinity)
@@ -374,7 +443,12 @@ private struct WidgetScoreRing: View {
     let diameter: CGFloat
     let lineWidth: CGFloat
     let labelFont: Font
-    let accessibilityOutOf: Int
+    /// nil for a raw-metric ring (HRV/RHR/HR have no natural "out of N" range) — the accessibility value
+    /// then reads "text rawUnit" instead. Existing score rings always pass this.
+    var accessibilityOutOf: Int? = nil
+    /// Unit suffix for a raw-metric ring's accessibility value (e.g. "milliseconds"). Ignored when
+    /// `accessibilityOutOf` is set.
+    var rawUnit: String? = nil
 
     private var clampedFraction: CGFloat {
         guard let fraction else { return 0 }
@@ -412,7 +486,14 @@ private struct WidgetScoreRing: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(label))
-        .accessibilityValue(Text(text.map { "\($0) out of \(accessibilityOutOf)" } ?? "unavailable"))
+        .accessibilityValue(Text(accessibilityValueText))
+    }
+
+    private var accessibilityValueText: String {
+        guard let text else { return "unavailable" }
+        if let accessibilityOutOf { return "\(text) out of \(accessibilityOutOf)" }
+        if let rawUnit { return "\(text) \(rawUnit)" }
+        return text
     }
 }
 

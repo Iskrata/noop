@@ -214506,7 +214506,123 @@
         "ru": {"stringUnit": {"state": "translated", "value": "Включено: заряд, отдых, ВСР и тренировки отправляются провайдеру, каждая тренировка с видом спорта, длительностью, дистанцией и пульсом."}},
         "zh-Hans": {"stringUnit": {"state": "translated", "value": "开启：你的充能、休息、HRV 和训练会发送给服务商，每次训练包含运动类型、时长、距离和心率。"}},
         "zh-Hant": {"stringUnit": {"state": "translated", "value": "開啟：你的充能、休息、HRV 和訓練會傳送給服務商，每次訓練包含運動類型、時長、距離和心率。"}}
-    } }
+    } },
+    "Hide scores": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Werte ausblenden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocultar puntuaciones"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masquer les scores"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nascondi punteggi"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocultar pontuações"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скрыть баллы"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏分数"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隱藏分數"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ukryj wyniki"
+          }
+        }
+      }
+    },
+    "Hide Charge, Effort, Rest and Stress scores and show the raw measurements (HRV, resting HR, sleep, heart rate) instead — for when another app like Bevel does the scoring.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blendet die Werte für Energie, Belastung, Erholung und Stress aus und zeigt stattdessen die reinen Messwerte (HRV, Ruheherzfrequenz, Schlaf, Herzfrequenz) – etwa wenn eine andere App wie Bevel die Bewertung übernimmt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oculta las puntuaciones de Carga, Esfuerzo, Descanso y Estrés y muestra en su lugar las mediciones sin procesar (HRV, frecuencia cardíaca en reposo, sueño, frecuencia cardíaca), por ejemplo cuando otra app como Bevel se encarga de puntuar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masque les scores Charge, Effort, Repos et Stress, et affiche à la place les mesures brutes (HRV, fréquence cardiaque au repos, sommeil, fréquence cardiaque) — par exemple lorsqu'une autre appli comme Bevel s'occupe du score."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nasconde i punteggi di Carica, Sforzo, Riposo e Stress e mostra invece le misurazioni grezze (HRV, frequenza cardiaca a riposo, sonno, frequenza cardiaca), ad esempio quando un'altra app come Bevel si occupa del punteggio."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oculta as pontuações de Carga, Esforço, Descanso e Stress e mostra em vez disso as medições em bruto (HRV, frequência cardíaca em repouso, sono, frequência cardíaca) — por exemplo quando outra app como a Bevel faz a pontuação."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скрывает баллы Заряда, Усилия, Отдыха и Стресса и вместо этого показывает необработанные измерения (HRV, пульс в покое, сон, пульс) — например, когда баллы считает другое приложение, например Bevel."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏能量、消耗、休息和压力分数，改为显示原始测量数据（HRV、静息心率、睡眠、心率）——适用于由 Bevel 等其他应用进行评分的情况。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隱藏能量、消耗、休息和壓力分數，改為顯示原始測量數據（HRV、靜息心率、睡眠、心率）——適用於由 Bevel 等其他應用程式進行評分的情況。"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ukrywa wyniki Energii, Wysiłku, Odpoczynku i Stresu i pokazuje zamiast nich surowe pomiary (HRV, tętno spoczynkowe, sen, tętno) — na przykład gdy inna aplikacja, np. Bevel, zajmuje się ocenianiem."
+          }
+        }
+      }
+    }
   },
   "version": "1.0"
 }

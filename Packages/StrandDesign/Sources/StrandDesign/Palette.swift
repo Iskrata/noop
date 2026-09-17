@@ -121,15 +121,49 @@ public enum StrandPalette {
     /// Liquid-scene activity tint shared by heart-rate feedback and transient sync chrome.
     public static let liquidHeart = Color(light: "#D94C64", dark: "#FF6B81")
 
-    // MARK: - Chart style (data-viz colour mode) — Titanium (brand) or Classic (throwback)
+    // MARK: - Chart style (data-viz colour mode) — Titanium (brand), Classic (throwback) or WHOOP
     //
     // Set from `@AppStorage(ChartStyle.storageKey)` at the app root. The DATA-RAMP accessors below
     // (recoveryStops, strainStops, hrZones, sleepStageColor, stress gradient, status, metric, and the
     // DomainTheme worlds) branch on this — so flipping it re-colours every gauge/chart/scale to the
-    // classic red→green readiness scale, in BOTH light and dark, with NO call-site changes. Chrome
-    // (surfaces, text, accent) is never touched.
-    public static var chartStyle: ChartStyle = .titanium
+    // classic red→green readiness scale (or WHOOP's own bands), in BOTH light and dark, with NO
+    // call-site changes. Chrome (surfaces, text, accent) is never touched.
+    //
+    // Defaults to `.whoop` (this fork's default, 2026-09-17) rather than `.titanium`: the widget
+    // extension and Live Activity render off this static default directly — they run in a separate
+    // process from the main app and never apply the `.chartStyle(_:)` View modifier that reads
+    // `@AppStorage` — so this is the only place their colours can pick up the fork's default.
+    public static var chartStyle: ChartStyle = .whoop
     @inline(__always) static var isClassic: Bool { chartStyle == .classic }
+    /// Whether the WHOOP data ramp is active. See `chartStyle`.
+    @inline(__always) static var isWhoop: Bool { chartStyle == .whoop }
+
+    // MARK: - WHOOP brand colours (sourced)
+    //
+    // Verified against WHOOP's own official Brand & Design Guidelines PDF, "WHOOP – Color Palette" page
+    // (https://developer.whoop.com/assets/files/WHOOP%20-%20Brand%20&%20Design%20Guidelines-bdea3554e94b4ea09e68695b1e8dc8e7.pdf,
+    // fetched 2026-09-17):
+    //   BLACK #000000 · WHITE #FFFFFF · TEAL #00F19F (CTA/highlight/"Sleep Need", not used here)
+    //   STRAIN #0093E7 · RECOVERY BLUE #67AEE6 ("used for recovery related data, without a valuation")
+    //   HIGH RECOVERY (100-67%) #16EC06 · MEDIUM RECOVERY (66-34%) #FFDE00 · LOW RECOVERY (33-0%) #FF0026
+    //   SLEEP #7BA1BB · BACKGROUND GRADIENT #283339 → #101518
+    // WHOOP ships dark-only, so each DARK value below is the verbatim brand hex; LIGHT is a deepened
+    // equivalent for contrast on a white card, the same light/dark derivation used elsewhere in this
+    // file (e.g. `gold` below). The three recovery-band hexes have no light variant to derive FROM (WHOOP
+    // never shows them on light) so they stay flat across both schemes, same as `signalYellow` treats a
+    // fixed alert hue.
+    public static let whoopStrain       = Color(light: "#0077BE", dark: "#0093E7")
+    public static let whoopStrainBright = Color(light: "#39A6EA", dark: "#5CC2F5")
+    public static let whoopStrainDeep   = Color(light: "#005C94", dark: "#0077BE")
+    public static let whoopSleep        = Color(light: "#5D7E93", dark: "#7BA1BB")
+    public static let whoopSleepBright  = Color(light: "#8FADC0", dark: "#A8C4D6")
+    public static let whoopSleepDeep    = Color(light: "#3E5A6E", dark: "#5D7E93")
+    public static let whoopRecoveryBlue       = Color(light: "#3E7CB0", dark: "#67AEE6")
+    public static let whoopRecoveryBlueBright = Color(light: "#6FA0CC", dark: "#8FC4EE")
+    public static let whoopRecoveryBlueDeep   = Color(light: "#2A5A82", dark: "#4A7FAE")
+    public static let whoopRecoveryGreen  = Color(hex: "#16EC06")
+    public static let whoopRecoveryYellow = Color(hex: "#FFDE00")
+    public static let whoopRecoveryRed    = Color(hex: "#FF0026")
 
     // MARK: Classic (throwback) data ramps — the recognizable health-app scale. Light/dark tuned.
     // Recovery: red → orange → amber → lime → green.
@@ -180,15 +214,33 @@ public enum StrandPalette {
     public static let recovery078 = Color(light: "#6FB23A", dark: "#8FD86A") // primed — yellow-green
     public static let recovery100 = Color(light: "#0F9D62", dark: "#03E095") // peak — WHOOP green
 
-    /// Ordered gradient stops for the recovery scale (Titanium gold ramp, or the Classic red→green).
+    // WHOOP-banded recovery: hard cutoffs at WHOOP's own thresholds (High ≥67, Medium 34–66, Low ≤33),
+    // not a blended ramp — the WHOOP recovery ring renders a solid arc per band, never a gradient
+    // between them, so `sample(stops:at:)` gets two stops per colour, one at each edge of its band.
+    static let wRecoveryStops: [Gradient.Stop] = [
+        .init(color: whoopRecoveryRed,    location: 0.00),
+        .init(color: whoopRecoveryRed,    location: 0.33),
+        .init(color: whoopRecoveryYellow, location: 0.34),
+        .init(color: whoopRecoveryYellow, location: 0.66),
+        .init(color: whoopRecoveryGreen,  location: 0.67),
+        .init(color: whoopRecoveryGreen,  location: 1.00),
+    ]
+
+    /// Ordered gradient stops for the recovery scale (Titanium gold ramp, Classic red→green, or the
+    /// WHOOP banded green/yellow/red).
     public static var recoveryStops: [Gradient.Stop] {
-        isClassic ? cRecoveryStops : [
-            .init(color: recovery000, location: 0.00),
-            .init(color: recovery030, location: 0.30),
-            .init(color: recovery055, location: 0.55),
-            .init(color: recovery078, location: 0.78),
-            .init(color: recovery100, location: 1.00),
-        ]
+        switch chartStyle {
+        case .classic: return cRecoveryStops
+        case .whoop:   return wRecoveryStops
+        case .titanium:
+            return [
+                .init(color: recovery000, location: 0.00),
+                .init(color: recovery030, location: 0.30),
+                .init(color: recovery055, location: 0.55),
+                .init(color: recovery078, location: 0.78),
+                .init(color: recovery100, location: 1.00),
+            ]
+        }
     }
 
     /// The signature recovery gradient (bronze → champagne, or Classic red→green).
@@ -202,13 +254,28 @@ public enum StrandPalette {
     public static let strain066 = Color(light: "#C2792E", dark: "#D98A3D") // bright amber
     public static let strain100 = Color(light: "#D89240", dark: "#F0A85A") // soft amber peak
 
+    // WHOOP strain: brand blue held flat across the working range, tapering only at the very ends —
+    // WHOOP's own Strain ring doesn't re-hue by value the way the amber Titanium ramp does; it's the
+    // same blue from empty to full.
+    static let wStrainStops: [Gradient.Stop] = [
+        .init(color: whoopStrainDeep,   location: 0.00),
+        .init(color: whoopStrain,       location: 0.15),
+        .init(color: whoopStrain,       location: 0.85),
+        .init(color: whoopStrainBright, location: 1.00),
+    ]
+
     public static var strainStops: [Gradient.Stop] {
-        isClassic ? cStrainStops : [
-            .init(color: strain000, location: 0.00),
-            .init(color: strain033, location: 0.33),
-            .init(color: strain066, location: 0.66),
-            .init(color: strain100, location: 1.00),
-        ]
+        switch chartStyle {
+        case .classic: return cStrainStops
+        case .whoop:   return wStrainStops
+        case .titanium:
+            return [
+                .init(color: strain000, location: 0.00),
+                .init(color: strain033, location: 0.33),
+                .init(color: strain066, location: 0.66),
+                .init(color: strain100, location: 1.00),
+            ]
+        }
     }
 
     /// The strain gradient (output / heat, or the Classic blue ramp).
@@ -234,10 +301,28 @@ public enum StrandPalette {
     /// HR zones indexed 1...5; index 0 mirrors zone1 for convenience.
     public static var hrZones: [Color] { [zone1, zone1, zone2, zone3, zone4, zone5] }
 
-    // MARK: Status — Titanium gold/amber/orange, or the Classic green/amber/red.
-    public static var statusPositive: Color { isClassic ? Color(light: "#2E9E4F", dark: "#46B45A") : Color(light: "#1F8A5B", dark: "#03E095") }
-    public static var statusWarning:  Color { isClassic ? Color(light: "#CFA528", dark: "#F2C53D") : Color(light: "#C2792E", dark: "#F0A020") }
-    public static var statusCritical: Color { isClassic ? Color(light: "#CB3A2F", dark: "#E5483B") : Color(light: "#C84E1E", dark: "#E0662F") }
+    // MARK: Status — Titanium gold/amber/orange, the Classic green/amber/red, or the WHOOP recovery bands.
+    public static var statusPositive: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#2E9E4F", dark: "#46B45A")
+        case .whoop:    return whoopRecoveryGreen
+        case .titanium: return Color(light: "#1F8A5B", dark: "#03E095")
+        }
+    }
+    public static var statusWarning: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#CFA528", dark: "#F2C53D")
+        case .whoop:    return whoopRecoveryYellow
+        case .titanium: return Color(light: "#C2792E", dark: "#F0A020")
+        }
+    }
+    public static var statusCritical: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#CB3A2F", dark: "#E5483B")
+        case .whoop:    return whoopRecoveryRed
+        case .titanium: return Color(light: "#C84E1E", dark: "#E0662F")
+        }
+    }
 
     // MARK: Per-metric accents — HRV / SpO₂ / energy / risk. Classic leans the traditional hues (purple HRV, red risk).
     public static var metricCyan:   Color { isClassic ? Color(light: "#2E92B4", dark: "#3FA9C9") : Color(light: "#2E92B4", dark: "#3FA9C9") }
@@ -256,26 +341,100 @@ public enum StrandPalette {
     // the data scale. The gauge ARC itself samples the recovery/strain/stress STOPS above, so it goes
     // full red→green / blue / green→red in Classic regardless of these.
 
-    /// Charge (recovery) — gold world / Classic green.
-    public static var chargeColor: Color  { isClassic ? Color(light: "#2E9E4F", dark: "#46B45A") : Color(light: "#0F9D62", dark: "#03E095") }
-    public static var chargeDeep: Color    { isClassic ? Color(light: "#207A3C", dark: "#2E9E4F") : Color(light: "#0B7A4A", dark: "#0B9D62") }
-    public static var chargeBright: Color  { isClassic ? Color(light: "#5FBE6E", dark: "#86D98E") : Color(light: "#5FD89A", dark: "#6BF0B4") }
-    public static var chargeGlow: Color    { isClassic ? Color(light: "#2E9E4F", dark: "#46B45A") : Color(light: "#0F9D62", dark: "#03E095") }
+    /// Charge (recovery) — gold world / Classic green / WHOOP's "Recovery Blue" (their own neutral,
+    /// valuation-free recovery accent — see the sourced comment above `whoopRecoveryBlue`).
+    public static var chargeColor: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#2E9E4F", dark: "#46B45A")
+        case .whoop:    return whoopRecoveryBlue
+        case .titanium: return Color(light: "#0F9D62", dark: "#03E095")
+        }
+    }
+    public static var chargeDeep: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#207A3C", dark: "#2E9E4F")
+        case .whoop:    return whoopRecoveryBlueDeep
+        case .titanium: return Color(light: "#0B7A4A", dark: "#0B9D62")
+        }
+    }
+    public static var chargeBright: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#5FBE6E", dark: "#86D98E")
+        case .whoop:    return whoopRecoveryBlueBright
+        case .titanium: return Color(light: "#5FD89A", dark: "#6BF0B4")
+        }
+    }
+    public static var chargeGlow: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#2E9E4F", dark: "#46B45A")
+        case .whoop:    return whoopRecoveryBlue
+        case .titanium: return Color(light: "#0F9D62", dark: "#03E095")
+        }
+    }
     /// Diagonal accent pair for the Charge card wash + gauge stroke (deep → bright).
     public static var chargeGradient: Gradient { Gradient(colors: [chargeDeep, chargeBright]) }
 
-    /// Effort (strain) — amber world / Classic blue.
-    public static var effortColor: Color   { isClassic ? Color(light: "#3A74C4", dark: "#4A90E2") : Color(light: "#2A78C8", dark: "#4090E0") }
-    public static var effortDeep: Color    { isClassic ? Color(light: "#284F9C", dark: "#2F6FCB") : Color(light: "#1E5B96", dark: "#2A6FB0") }
-    public static var effortBright: Color  { isClassic ? Color(light: "#5E92D6", dark: "#7FB2E8") : Color(light: "#5AA0E0", dark: "#74B6F0") }
-    public static var effortGlow: Color    { isClassic ? Color(light: "#3A74C4", dark: "#4A90E2") : Color(light: "#2A78C8", dark: "#4090E0") }
+    /// Effort (strain) — amber world / Classic blue / WHOOP's own Strain blue.
+    public static var effortColor: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#3A74C4", dark: "#4A90E2")
+        case .whoop:    return whoopStrain
+        case .titanium: return Color(light: "#2A78C8", dark: "#4090E0")
+        }
+    }
+    public static var effortDeep: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#284F9C", dark: "#2F6FCB")
+        case .whoop:    return whoopStrainDeep
+        case .titanium: return Color(light: "#1E5B96", dark: "#2A6FB0")
+        }
+    }
+    public static var effortBright: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#5E92D6", dark: "#7FB2E8")
+        case .whoop:    return whoopStrainBright
+        case .titanium: return Color(light: "#5AA0E0", dark: "#74B6F0")
+        }
+    }
+    public static var effortGlow: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#3A74C4", dark: "#4A90E2")
+        case .whoop:    return whoopStrain
+        case .titanium: return Color(light: "#2A78C8", dark: "#4090E0")
+        }
+    }
     public static var effortGradient: Gradient { Gradient(colors: [effortDeep, effortBright]) }
 
-    /// Rest (sleep) — blue world / Classic indigo.
-    public static var restColor: Color     { isClassic ? Color(light: "#3A80D6", dark: "#6FA8E8") : Color(light: "#5E7896", dark: "#83A0B8") }
-    public static var restDeep: Color      { isClassic ? Color(light: "#203E73", dark: "#2A4C8F") : Color(light: "#234F9E", dark: "#2F6FCB") }
-    public static var restBright: Color    { isClassic ? Color(light: "#6A4FC0", dark: "#8E6FD6") : Color(light: "#5790DA", dark: "#6FA8E8") }
-    public static var restGlow: Color      { isClassic ? Color(light: "#3A80D6", dark: "#6FA8E8") : Color(light: "#3A80D6", dark: "#4A90E2") }
+    /// Rest (sleep) — blue world / Classic indigo / WHOOP's own Sleep blue-grey. WHOOP has no distinct
+    /// "Stress" metric, so `stressColor` below is left on the Titanium/Classic values for `.whoop` too.
+    public static var restColor: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#3A80D6", dark: "#6FA8E8")
+        case .whoop:    return whoopSleep
+        case .titanium: return Color(light: "#5E7896", dark: "#83A0B8")
+        }
+    }
+    public static var restDeep: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#203E73", dark: "#2A4C8F")
+        case .whoop:    return whoopSleepDeep
+        case .titanium: return Color(light: "#234F9E", dark: "#2F6FCB")
+        }
+    }
+    public static var restBright: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#6A4FC0", dark: "#8E6FD6")
+        case .whoop:    return whoopSleepBright
+        case .titanium: return Color(light: "#5790DA", dark: "#6FA8E8")
+        }
+    }
+    public static var restGlow: Color {
+        switch chartStyle {
+        case .classic:  return Color(light: "#3A80D6", dark: "#6FA8E8")
+        case .whoop:    return whoopSleep
+        case .titanium: return Color(light: "#3A80D6", dark: "#4A90E2")
+        }
+    }
     /// The Rest family's most legible LINE colour — for strokes that must read on a busy or translucent
     /// surface, such as the body-clock dial's arcs over a custom background image.
     ///
@@ -314,12 +473,16 @@ public enum StrandPalette {
     // Apple and Android match byte-for-byte.
 
     /// Brand gold — primary accent. Gold FILLS stay bright (dark text on them is legible in both schemes);
-    /// only a hair deeper on light so the fill doesn't wash out against white.
-    public static let gold          = Color(light: "#3A78C8", dark: "#60A0E0") // repointed to WHOOP blue (gold killed 2026-06-22)
+    /// only a hair deeper on light so the fill doesn't wash out against white. Repointed to WHOOP blue
+    /// (gold killed 2026-06-22); re-sourced to the exact WHOOP Strain hex 2026-09-17 (see `whoopStrain`
+    /// above) instead of the ad-hoc blue this used previously, so the app's one "brand blue" is a single
+    /// value rather than three near-identical hexes drifting apart across `gold`/`effortColor`/
+    /// `AccentColor.whoopBlue`.
+    public static let gold          = whoopStrain
     /// Bright blue — accent highlight / hover (was champagne).
-    public static let goldLight     = Color(light: "#6FA8E0", dark: "#9FC8F0")
+    public static let goldLight     = whoopStrainBright
     /// Deep blue — accent low stop (was bronze).
-    public static let goldDeep      = Color(light: "#2A5C9E", dark: "#3A78C8")
+    public static let goldDeep      = whoopStrainDeep
     /// Near-black brown — text / icons placed ON gold surfaces (scheme-invariant; gold fills stay gold).
     public static let goldDeepText  = Color(hex: "#FFFFFF") // white text/icons on accent fills (WHOOP, gold killed)
     /// The bright core dot at a gauge arc tip / sparkline head. White reads as a highlight on the dark

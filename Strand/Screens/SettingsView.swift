@@ -204,11 +204,11 @@ struct SettingsView: View {
     // standard AppleLanguages override and takes effect after the user reopens NOOP.
     @AppStorage(AppLanguage.storageKey) private var appLanguageRaw = AppLanguage.system.rawValue
     // Chart colour style: Titanium (brand) or Classic (throwback red→green). Re-colours gauges + charts.
-    @AppStorage(ChartStyle.storageKey) private var chartStyleRaw = ChartStyle.titanium.rawValue
+    @AppStorage(ChartStyle.storageKey) private var chartStyleRaw = ChartStyle.whoop.rawValue
     // Sleep tab stage-CHART shape: Classic per-stage rows, or the WHOOP-style stepped hypnogram Filled/Ribbon.
     @AppStorage(SleepChartStyle.storageKey) private var sleepChartStyleRaw = SleepChartStyle.classic.rawValue
     // Chrome accent colour (mint / WHOOP blue / custom). Chrome only — never the data colour worlds.
-    @AppStorage(AccentColor.storageKey) private var accentRaw = AccentColor.mint.rawValue
+    @AppStorage(AccentColor.storageKey) private var accentRaw = AccentColor.whoopBlue.rawValue
     @AppStorage(AccentColor.customHexKey) private var accentCustomHex = AccentColor.defaultCustomHex
     // Day-cycle scene backdrop behind Today (#698). Default ON. Off swaps the scene for a plain dark
     // canvas. TodayView reads the same key to gate its SceneScreenBackground.
@@ -225,6 +225,11 @@ struct SettingsView: View {
     // Hydration tracker (opt-in, MVP). Default OFF — when off the hydration dashboard card + detail are
     // hidden. Mirrors the Android pref so the toggle reads the same on both platforms.
     @AppStorage(HydrationStore.enabledKey) private var hydrationEnabled = false
+    // "Hide scores" (this fork, default ON): hide NOOP's own Charge/Effort/Rest/Stress composite scores
+    // across Today, widgets, the Live Activity and score-based notifications, showing the underlying raw
+    // measurements instead — for someone who already scores themselves elsewhere (Bevel). See
+    // `ScoreVisibility`.
+    @AppStorage(ScoreVisibility.hiddenKey) private var hideScores = true
 
     /// Opt-in "Auto-detect workouts" (default OFF). When ON, Today scans the last day or two of HR for a
     /// sustained-elevated window and offers — via a single dismissible card — to save it as a workout.
@@ -1345,6 +1350,23 @@ struct SettingsView: View {
                     .onChangeCompat(of: useNavyIcon) { applyAppIcon($0) }
                 }
                 #endif
+
+                rowDivider
+                // MARK: Hide scores — this fork's default (ON): hides NOOP's own composite scores
+                // (Charge/Effort/Rest/Stress) everywhere they'd otherwise show, in favour of the raw
+                // measurements underneath. See `ScoreVisibility`.
+                Toggle(isOn: $hideScores) {
+                    Text("Hide scores")
+                        .font(StrandFont.subhead)
+                        .foregroundStyle(StrandPalette.textPrimary)
+                }
+                .toggleStyle(.switch)
+                .tint(StrandPalette.accent)
+                Text("Hide Charge, Effort, Rest and Stress scores and show the raw measurements (HRV, resting HR, sleep, heart rate) instead — for when another app like Bevel does the scoring.")
+                    .font(StrandFont.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 rowDivider
                 // MARK: Reduce motion in NOOP — pose every looping animation still and stop the tilt

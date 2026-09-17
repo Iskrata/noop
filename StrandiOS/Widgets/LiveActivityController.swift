@@ -1,6 +1,7 @@
 #if os(iOS)
 import Foundation
 import ActivityKit
+import StrandDesign
 
 /// Starts, updates, and ends the live-HR Live Activity. The activity appears on the Lock Screen and
 /// in the Dynamic Island while the strap is bonded and streaming heart rate.
@@ -53,6 +54,13 @@ final class LiveActivityController {
         }
         guard bpm != nil else { return }
 
+        // #hide-scores: this file runs in the MAIN APP process (unlike the widget extension, which needs
+        // the App Group bridge — see `WidgetSnapshot.hideScores`), so it can read the flag directly and
+        // simply not pack the composite scores into the Live Activity at all. `NOOPLiveActivity`'s
+        // rendering already omits a nil `recovery`/`effort` cleanly (no blank stat), leaving live HR — a
+        // raw measurement, unaffected by this flag — as the activity's whole content.
+        let recovery = ScoreVisibility.hidden ? nil : recovery
+        let effort = ScoreVisibility.hidden ? nil : effort
         let state = NOOPActivityAttributes.ContentState(bpm: bpm, recovery: recovery, bonded: connected,
                                                         effort: effort)
         let staleDate = Date().addingTimeInterval(Self.staleAfter)

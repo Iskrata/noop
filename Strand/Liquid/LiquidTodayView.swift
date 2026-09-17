@@ -670,42 +670,73 @@ struct LiquidTodayView: View {
 
     private var heroCard: some View {
         HStack(alignment: .top, spacing: 4) {
-            // #543 carry: an unscored today shows the last scored night's REAL Charge (labelled as prior by
-            // the state pill) rather than an empty vessel, matching the classic Today, the widget/watch/Live
-            // Activity (`Repository.widgetAnchor`) and Android. Effort deliberately does NOT carry — it is
-            // today's own accumulation, so yesterday's number would be a false statement, not a stale one.
-            HeroScoreCell(label: String(localized: "Charge"), score: chargeDisplay.pct, tint: StrandPalette.chargeColor,
-                          animated: dataLoaded, onGuide: { guideSection = .charge },
-                          detailRoute: .metric(HeroRingMetric.charge))
-            // #45: the hero Effort must honour the user's Effort scale like every other Effort read-out.
-            // Show the value on the chosen scale (0–100 or WHOOP 0–21) with the matching vessel max, and
-            // one decimal on the compressed 0–21 axis to match the app-wide `effortDisplay` convention
-            // (12.6, not a rounded "13"); the 0–100 hero stays a whole number as before.
-            HeroScoreCell(label: String(localized: "Effort"),
-                          score: effortStrain(displayDay).map { UnitFormatter.effortValue($0, scale: effortScale) },
-                          tint: StrandPalette.effortColor, animated: dataLoaded,
-                          onGuide: { guideSection = .effort },
-                          maxValue: effortScale == .whoop ? 21 : 100,
-                          decimals: effortScale == .whoop ? 1 : 0,
-                          detailRoute: .metric(HeroRingMetric.effort))
-            HeroScoreCell(label: String(localized: "Rest"), score: restScore, tint: StrandPalette.restColor,
-                          animated: dataLoaded, onGuide: { guideSection = .rest },
-                          detailRoute: .metric(HeroRingMetric.rest))
-                .overlay(alignment: .top) {
-                    if let sourceLabel = heroSourceLabel {
-                        SourceBadge("\(sourceLabel)", tint: StrandPalette.textSecondary)
-                            // Match the badge's trailing edge to the Rest vessel and centre it on the card border.
-                            .fixedSize()
-                            .frame(width: HeroScoreCell.vesselDiameter, alignment: .trailing)
-                            .offset(y: -(NoopMetrics.space4 + NoopMetrics.sourceBadgeHeight / 2))
-                            .allowsHitTesting(false)
-                            .accessibilityLabel(Text("Source: \(sourceLabel)"))
+            if ScoreVisibility.hidden {
+                heroRawMetricRow
+            } else {
+                // #543 carry: an unscored today shows the last scored night's REAL Charge (labelled as
+                // prior by the state pill) rather than an empty vessel, matching the classic Today, the
+                // widget/watch/Live Activity (`Repository.widgetAnchor`) and Android. Effort deliberately
+                // does NOT carry — it is today's own accumulation, so yesterday's number would be a false
+                // statement, not a stale one.
+                HeroScoreCell(label: String(localized: "Charge"), score: chargeDisplay.pct, tint: StrandPalette.chargeColor,
+                              animated: dataLoaded, onGuide: { guideSection = .charge },
+                              detailRoute: .metric(HeroRingMetric.charge))
+                // #45: the hero Effort must honour the user's Effort scale like every other Effort read-out.
+                // Show the value on the chosen scale (0–100 or WHOOP 0–21) with the matching vessel max, and
+                // one decimal on the compressed 0–21 axis to match the app-wide `effortDisplay` convention
+                // (12.6, not a rounded "13"); the 0–100 hero stays a whole number as before.
+                HeroScoreCell(label: String(localized: "Effort"),
+                              score: effortStrain(displayDay).map { UnitFormatter.effortValue($0, scale: effortScale) },
+                              tint: StrandPalette.effortColor, animated: dataLoaded,
+                              onGuide: { guideSection = .effort },
+                              maxValue: effortScale == .whoop ? 21 : 100,
+                              decimals: effortScale == .whoop ? 1 : 0,
+                              detailRoute: .metric(HeroRingMetric.effort))
+                HeroScoreCell(label: String(localized: "Rest"), score: restScore, tint: StrandPalette.restColor,
+                              animated: dataLoaded, onGuide: { guideSection = .rest },
+                              detailRoute: .metric(HeroRingMetric.rest))
+                    .overlay(alignment: .top) {
+                        if let sourceLabel = heroSourceLabel {
+                            SourceBadge("\(sourceLabel)", tint: StrandPalette.textSecondary)
+                                // Match the badge's trailing edge to the Rest vessel and centre it on the card border.
+                                .fixedSize()
+                                .frame(width: HeroScoreCell.vesselDiameter, alignment: .trailing)
+                                .offset(y: -(NoopMetrics.space4 + NoopMetrics.sourceBadgeHeight / 2))
+                                .allowsHitTesting(false)
+                                .accessibilityLabel(Text("Source: \(sourceLabel)"))
+                        }
                     }
-                }
+            }
         }
         .padding(.vertical, NoopMetrics.space4)
         .padding(.horizontal, NoopMetrics.space3)
         .background(NoopPanelSurface(cornerRadius: 26, elevated: true, surfaceOpacity: cardOpacity))
+    }
+
+    /// `ScoreVisibility.hidden` substitute for the hero trio: raw measurements at the same footprint as
+    /// the Charge/Effort/Rest vessels they replace (HRV+RHR, active energy, time asleep) — see
+    /// `RawMetricHeroCell`. Charge and Rest already carry-forward from the last recorded day via
+    /// `hrvDay`/`restingHrDay`/`vitalsDay` (the same per-field carry `recoveryVitalsSection` uses), so
+    /// this reads honest, non-blank values as often as the vitals card below it does.
+    private var heroRawMetricRow: some View {
+        let hrv = displayDay?.avgHrv ?? hrvDay?.avgHrv
+        let rhr = (displayDay?.restingHr ?? restingHrDay?.restingHr).map(Double.init)
+        return Group {
+            RawMetricHeroCell(symbol: "waveform.path.ecg",
+                              primary: hrv.map { String(Int($0.rounded())) }, primaryUnit: "ms",
+                              secondary: rhr.map { "RHR \(Int($0.rounded()))" },
+                              label: String(localized: "HRV"), diameter: HeroScoreCell.vesselDiameter,
+                              tint: StrandPalette.chargeColor)
+            RawMetricHeroCell(symbol: "flame.fill",
+                              primary: displayDay?.activeKcalEst.map { String(Int($0.rounded())) },
+                              primaryUnit: "kcal",
+                              label: String(localized: "Active"), diameter: HeroScoreCell.vesselDiameter,
+                              tint: StrandPalette.effortColor)
+            RawMetricHeroCell(symbol: "bed.double.fill",
+                              primary: displayDay?.totalSleepMin.map { RawMetricHeroCell.hoursMinutes($0) },
+                              label: String(localized: "Asleep"), diameter: HeroScoreCell.vesselDiameter,
+                              tint: StrandPalette.restColor)
+        }
     }
 
     // MARK: - Heart rate
@@ -951,8 +982,12 @@ struct LiquidTodayView: View {
         case .stepsAverage30:
             RollingStepsAverageCard(day: selectedDayKey)
         case .stress:
-            cardLink(.stress, title: card.title, sub: card.subtitle,
-                     value: stressText, tint: StrandPalette.accent, frac: fracOver(stress, 3))
+            // Stress is a composite NOOP score with no raw-measurement substitute, so hiding it just
+            // omits the card rather than showing an empty one (#hide-scores).
+            if !ScoreVisibility.hidden {
+                cardLink(.stress, title: card.title, sub: card.subtitle,
+                         value: stressText, tint: StrandPalette.accent, frac: fracOver(stress, 3))
+            }
         case .fitnessAge:
             cardLink(.metric("fitness_age"), title: card.title, sub: card.subtitle,
                      // Bound symbol as on the Health hero (#2173), so a floored reading does not read
@@ -1124,27 +1159,32 @@ struct LiquidTodayView: View {
                 Text(greeting).font(StrandFont.rounded(19)).foregroundStyle(StrandPalette.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.6)   // yield to the pills rather than push them to wrap
                 Spacer(minLength: 8)
-                HStack(spacing: 8) {
-                    if let word = readinessWord {
-                        Text(word)
-                            .font(StrandFont.caption.weight(.bold))
-                            .foregroundStyle(StrandPalette.chargeColor)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(StrandPalette.chargeColor.opacity(0.14))
-                                .overlay(Capsule().strokeBorder(StrandPalette.chargeColor.opacity(0.3), lineWidth: 1)))
+                // The readiness word and the Charge state label are both CATEGORICAL restatements of the
+                // Charge score (e.g. "PRIMED"), so `ScoreVisibility.hidden` drops the whole pill row, not
+                // just the numeric hero ring (#hide-scores).
+                if !ScoreVisibility.hidden {
+                    HStack(spacing: 8) {
+                        if let word = readinessWord {
+                            Text(word)
+                                .font(StrandFont.caption.weight(.bold))
+                                .foregroundStyle(StrandPalette.chargeColor)
+                                .padding(.horizontal, 13)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(StrandPalette.chargeColor.opacity(0.14))
+                                    .overlay(Capsule().strokeBorder(StrandPalette.chargeColor.opacity(0.3), lineWidth: 1)))
+                        }
+                        HStack(spacing: 5) {
+                            Circle().fill(StrandPalette.chargeColor).frame(width: 6, height: 6)
+                            Text(chargeDisplay.stateLabel)
+                                .font(StrandFont.caption.weight(.bold))
+                                .foregroundStyle(StrandPalette.chargeColor)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Capsule().strokeBorder(StrandPalette.chargeColor.opacity(0.3), lineWidth: 1))
                     }
-                    HStack(spacing: 5) {
-                        Circle().fill(StrandPalette.chargeColor).frame(width: 6, height: 6)
-                        Text(chargeDisplay.stateLabel)
-                            .font(StrandFont.caption.weight(.bold))
-                            .foregroundStyle(StrandPalette.chargeColor)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Capsule().strokeBorder(StrandPalette.chargeColor.opacity(0.3), lineWidth: 1))
+                    .fixedSize(horizontal: true, vertical: false)   // pills keep their natural width — no "Calibrating" wrap
                 }
-                .fixedSize(horizontal: true, vertical: false)   // pills keep their natural width — no "Calibrating" wrap
             }
             .padding(.horizontal, 2)
             .padding(.top, 4)
@@ -1349,16 +1389,26 @@ struct LiquidTodayView: View {
             // hero are the same number, so a carry that reached only one of them would put two answers for
             // Charge on one screen. (#543: one prior row feeds every recovery-derived read-out.) Strain below
             // stays raw, matching the Effort hero, which correctly does not carry.
-            ktile(String(localized: "Recovery"), icon: keyMetricIcon(metric), intText(chargeDisplay.pct), "%", StrandPalette.chargeColor, frac(chargeDisplay.pct), key: HeroRingMetric.charge)
+            //
+            // Suppressed under `ScoreVisibility.hidden` rather than swapped to a raw readout: `.hrv` and
+            // `.restingHr` are already their OWN selectable Key Metrics tiles, so replacing this one with
+            // the same raw numbers would risk showing HRV twice on a grid where the user picked both.
+            if !ScoreVisibility.hidden {
+                ktile(String(localized: "Recovery"), icon: keyMetricIcon(metric), intText(chargeDisplay.pct), "%", StrandPalette.chargeColor, frac(chargeDisplay.pct), key: HeroRingMetric.charge)
+            }
         case .effort:
             // #492: Effort is a load index (0–100 NOOP / 0–21 WHOOP), NOT a percentage, and the unit was
             // wrong on either axis. Fixed on Android and in `TodayView` at the time; THIS view kept the old
             // form, so the tile also ignored the scale toggle — the hero ring above it read ~8 on the WHOOP
             // axis while this read 38. `effortText` is the same shared formatter the ring and the workout
             // rows use, so all three now agree by construction.
-            ktile(String(localized: "Strain"), icon: keyMetricIcon(metric), effortText(effortStrain(displayDay)), "", StrandPalette.effortColor, frac(effortStrain(displayDay)), key: HeroRingMetric.effort)
+            if !ScoreVisibility.hidden {
+                ktile(String(localized: "Strain"), icon: keyMetricIcon(metric), effortText(effortStrain(displayDay)), "", StrandPalette.effortColor, frac(effortStrain(displayDay)), key: HeroRingMetric.effort)
+            }
         case .rest:
-            ktile(String(localized: "Rest"), icon: keyMetricIcon(metric), intText(restScore), "%", StrandPalette.restColor, frac(restScore), key: HeroRingMetric.rest)
+            if !ScoreVisibility.hidden {
+                ktile(String(localized: "Rest"), icon: keyMetricIcon(metric), intText(restScore), "%", StrandPalette.restColor, frac(restScore), key: HeroRingMetric.rest)
+            }
         case .hrv:
             ktile("HRV", icon: keyMetricIcon(metric), intText(hrv), "ms", StrandPalette.metricCyan, fracOver(hrv, 120), key: "hrv")
         case .restingHr:
@@ -1521,13 +1571,41 @@ struct LiquidTodayView: View {
                         Text(workoutSub(w)).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     }
                     Spacer()
-                    (Text(effortText(w.strain)).font(StrandFont.number(15))
-                        + Text(" EFFORT").font(StrandFont.overlineScaled(9)))
-                        .foregroundStyle(StrandPalette.textPrimary)
+                    if ScoreVisibility.hidden {
+                        let raw = workoutRawEffort(w)
+                        // `Text(raw.unit)` takes the verbatim-String overload (no LocalizedStringKey
+                        // interpolation to extract): `unit` is plain Swift data built in
+                        // `workoutRawEffort`, not a source literal.
+                        (Text(raw.value).font(StrandFont.number(15))
+                            + Text(raw.unit).font(StrandFont.overlineScaled(9)))
+                            .foregroundStyle(StrandPalette.textPrimary)
+                    } else {
+                        (Text(effortText(w.strain)).font(StrandFont.number(15))
+                            + Text(" EFFORT").font(StrandFont.overlineScaled(9)))
+                            .foregroundStyle(StrandPalette.textPrimary)
+                    }
                 }
-                LiquidTube(frac: (w.strain ?? 0) / 100, tint: StrandPalette.effortColor, height: 12, animated: false)
+                if ScoreVisibility.hidden {
+                    if let kcal = w.energyKcal {
+                        LiquidTube(frac: min(1, kcal / 800), tint: StrandPalette.effortColor, height: 12, animated: false)
+                    }
+                } else {
+                    LiquidTube(frac: (w.strain ?? 0) / 100, tint: StrandPalette.effortColor, height: 12, animated: false)
+                }
             }
         }
+    }
+
+    /// `ScoreVisibility.hidden` substitute for a workout's Effort number: active calories when the
+    /// session has them, else average heart rate — the raw measurements behind the strain score
+    /// (#hide-scores). "–"/"–" when a session has neither (rare: an import with no HR and no calories).
+    private func workoutRawEffort(_ w: WorkoutRow) -> (value: String, unit: String) {
+        // Leading space folded in here (not at the call site) so the caller can pass this straight to
+        // `Text(_:)`'s verbatim-String overload — a bare source literal there would need String Catalog
+        // extraction for a key that is not a real, stable phrase.
+        if let kcal = w.energyKcal { return (String(Int(kcal.rounded())), " KCAL") }
+        if let hr = w.avgHr { return (String(hr), " AVG HR") }
+        return ("–", "")
     }
 
     // MARK: - Data sources
