@@ -184,6 +184,12 @@ public enum HealthWriteback {
     /// captured during the sleep window. A sample stamped exactly at wake sits on that boundary. The
     /// longest night rather than the latest, so a nap after the main sleep does not carry the night's
     /// values out of the night they came from.
+    ///
+    /// The midpoint of a bridged night can fall in the awake gap between its fragments, or in an awake
+    /// segment of one. It is still inside the `.inBed` sample, but a reader that keys off asleep samples
+    /// would not see it, so an instant that lands outside every asleep interval moves to the nearest
+    /// asleep second. A night whose stages carry no timing has only `.unspecified` asleep intervals and
+    /// keeps its midpoint.
     public static func vitalsInstantByDay(_ entries: [MergedSleepEntry],
                                           dayOf: (Int) -> String) -> [String: Int] {
         var longest: [String: MergedSleepEntry] = [:]
@@ -193,7 +199,14 @@ public enum HealthWriteback {
                current.spanEnd - current.spanStart >= entry.spanEnd - entry.spanStart { continue }
             longest[day] = entry
         }
-        return longest.mapValues { $0.spanStart + ($0.spanEnd - $0.spanStart) / 2 }
+        return longest.mapValues { entry in
+            let mid = entry.spanStart + (entry.spanEnd - entry.spanStart) / 2
+            let asleep = entry.intervals.filter { $0.kind != .awake && $0.end > $0.start }
+            if asleep.isEmpty || asleep.contains(where: { $0.start <= mid && mid < $0.end }) { return mid }
+            // Closest second inside each asleep interval; the nearest wins, the earlier on a tie.
+            return asleep.map { min(max(mid, $0.start), $0.end - 1) }
+                .min { abs($0 - mid) == abs($1 - mid) ? $0 < $1 : abs($0 - mid) < abs($1 - mid) } ?? mid
+        }
     }
 
     /// The vitals key: `noop:<metricId>:<day>`.
