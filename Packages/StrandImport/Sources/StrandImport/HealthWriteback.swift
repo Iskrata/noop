@@ -203,9 +203,19 @@ public enum HealthWriteback {
             let mid = entry.spanStart + (entry.spanEnd - entry.spanStart) / 2
             let asleep = entry.intervals.filter { $0.kind != .awake && $0.end > $0.start }
             if asleep.isEmpty || asleep.contains(where: { $0.start <= mid && mid < $0.end }) { return mid }
-            // Closest second inside each asleep interval; the nearest wins, the earlier on a tie.
-            return asleep.map { min(max(mid, $0.start), $0.end - 1) }
-                .min { abs($0 - mid) == abs($1 - mid) ? $0 < $1 : abs($0 - mid) < abs($1 - mid) } ?? mid
+            // Closest second inside each asleep interval; the nearest wins, the earlier on a tie. A plain loop:
+            // the equivalent `map { }.min { }` chain exceeded the type-checker's budget on CI.
+            var best = mid
+            var bestDistance = Int.max
+            for interval in asleep {
+                let candidate: Int = min(max(mid, interval.start), interval.end - 1)
+                let distance: Int = abs(candidate - mid)
+                if distance < bestDistance || (distance == bestDistance && candidate < best) {
+                    best = candidate
+                    bestDistance = distance
+                }
+            }
+            return best
         }
     }
 
