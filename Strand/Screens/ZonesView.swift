@@ -7,6 +7,11 @@ import StrandAnalytics
 struct ZonesView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var live: LiveState
+    @Environment(\.scenePhase) private var scenePhase
+    /// Whether this screen holds one of the realtime-HR claims (`AppModel.startRealtimeHR`), so every start is
+    /// balanced by exactly one stop.
+    @State private var holdsRealtime = false
+    @State private var visible = false
 
     private var zoneSet: HRZoneSet { model.profile.hrZoneSet }
     private var zone: Int { model.bpm.map { zoneSet.zoneNumber(forBPM: Double($0)) } ?? 0 }
@@ -48,9 +53,21 @@ struct ZonesView: View {
                 }
             }
         }
-        #if os(iOS)
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
-        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
-        #endif
+        // The strap only streams per-second heart rate while a screen asks for it; without this the big number
+        // stayed "--" and no zone lit. Released when the tab is left or the app goes to the background (a
+        // background transition fires no onDisappear), so the stream never runs unseen.
+        .onAppear { visible = true; setRealtime(scenePhase == .active) }
+        .onDisappear { visible = false; setRealtime(false) }
+        // A tab that is not showing stays alive in the TabView and still sees scene changes, hence `visible`.
+        .onChangeCompat(of: scenePhase == .active) { active in setRealtime(active && visible) }
+        .onChangeCompat(of: live.bonded) { _ in model.rearmRealtimeIfWanted() }
+        .onChangeCompat(of: live.connected) { _ in model.rearmRealtimeIfWanted() }
+    }
+
+    private func setRealtime(_ wanted: Bool) {
+        guard wanted != holdsRealtime else { return }
+        holdsRealtime = wanted
+        if wanted { model.startRealtimeHR() } else { model.stopRealtimeHR() }
+        ScreenIdle.keepAwake(wanted)
     }
 }
