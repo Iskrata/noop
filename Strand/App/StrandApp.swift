@@ -77,7 +77,13 @@ struct StrandApp: App {
                 // Single-param form (not the two-param `{ _, phase in }`) — that overload needs macOS 14,
                 // this target is macOS 13.
                 .onChange(of: scenePhase) { phase in
-                    if phase == .active { model.ble.requestSync(.foreground) }
+                    if phase == .active {
+                        model.ble.requestSync(.foreground)
+                        // Re-arm the stale-sync alert from the current last-sync time — self-heals a
+                        // pending request that drifted (denied-then-granted authorization, a toggle
+                        // flipped while backgrounded) rather than trusting the last arm to still hold.
+                        model.armStaleSyncAlert()
+                    }
                 }
         }
         .windowStyle(.hiddenTitleBar)

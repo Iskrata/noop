@@ -69,6 +69,7 @@ struct AutomationsView: View {
             illnessCard
             healthInsightsCard
             batteryCard
+            staleSyncAlertCard
             strainTargetCard
         }
     }
@@ -424,6 +425,22 @@ struct AutomationsView: View {
                           help: String(localized: "An early \"recharge tonight\" heads-up when the strap has about a day of estimated runtime left, at most once per discharge cycle. Turn off to keep only the 15% warning."),
                           isOn: $behavior.batteryPredictiveAlerts)
             }
+        }
+    }
+
+    // MARK: - Strap sync alert
+
+    private var staleSyncAlertCard: some View {
+        Section2(icon: "antenna.radiowaves.left.and.right.slash", title: String(localized: "Strap sync alert"),
+                 blurb: String(localized: "Notifies you if the strap hasn't synced for 3 hours — e.g. NOOP was closed from the app switcher or iOS stopped it."),
+                 active: behavior.staleSyncAlert) {
+            ToggleRow(label: String(localized: "Notify when the strap stops syncing"),
+                      help: String(localized: "Notifies you if the strap hasn't synced for 3 hours — e.g. NOOP was closed from the app switcher or iOS stopped it. Delivered by the system even if NOOP isn't running, so a lost night doesn't go unnoticed. Turning this off clears any pending or delivered alert."),
+                      isOn: $behavior.staleSyncAlert)
+                .onChangeCompat(of: behavior.staleSyncAlert) { on in
+                    if on { BatteryNotifier.requestAuthorization() }
+                    model.armStaleSyncAlert()
+                }
         }
     }
 
