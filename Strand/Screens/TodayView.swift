@@ -2363,11 +2363,16 @@ struct TodayView: View {
                 // S4 (#205): the one-word readiness read kept on the hero now the full Readiness card folded
                 // into the Charge-ring tap. Push / Maintain / Rest, derived from the existing Readiness
                 // level; hidden when there isn't enough history (nil word). Sits beside the confidence pill.
-                if let word = Self.readinessWord(readiness.level) {
-                    readinessHeroPill(word)
+                //
+                // Both pills are CATEGORICAL restatements of the Charge score (e.g. "PRIMED", "Push"), so
+                // `ScoreVisibility.hidden` drops them alongside the numeric hero ring (#hide-scores).
+                if !ScoreVisibility.hidden {
+                    if let word = Self.readinessWord(readiness.level) {
+                        readinessHeroPill(word)
+                    }
+                    recoveryStatePill(score: score)
+                        .layoutPriority(1)
                 }
-                recoveryStatePill(score: score)
-                    .layoutPriority(1)
             }
             .accessibilityElement(children: .combine)
 
@@ -2681,8 +2686,12 @@ struct TodayView: View {
         case .stepsAverage30:
             RollingStepsAverageCard(day: selectedDayKey)
         case .stress:
-            pinnedCardRow(icon: card.icon, tint: tint, title: card.title, subtitle: card.subtitle,
-                          value: dashboardValue(card), route: .stress)
+            // Stress is a composite NOOP score with no raw-measurement substitute, so hiding it just
+            // omits the row rather than showing an empty one (#hide-scores).
+            if !ScoreVisibility.hidden {
+                pinnedCardRow(icon: card.icon, tint: tint, title: card.title, subtitle: card.subtitle,
+                              value: dashboardValue(card), route: .stress)
+            }
         case .fitnessAge, .vo2max, .vitality, .steps, .calories:
             pinnedCardRow(icon: card.icon, tint: tint, title: card.title, subtitle: card.subtitle,
                           value: dashboardValue(card), route: .health)
@@ -3255,6 +3264,9 @@ struct TodayView: View {
         // generous spacing, mirroring the flat mockup. Sized off width so they stay equal on any phone.
         let ring = Self.heroRingDiameter(rowWidth: measured)
         HStack(alignment: .top, spacing: 22) {
+            if ScoreVisibility.hidden {
+                rawMetricHeroRow(d: d, diameter: ring)
+            } else {
             // Component 4: Charge/Rest badge their real per-day merge winner; Effort has no badge.
             // A1 (#514/#706): the Charge ring is TAPPABLE (a small chevron cue overlays the ring's bottom
             // edge, INSIDE the ring frame so it adds no stacked height, keeping the #762 self-sizing row
@@ -3282,6 +3294,7 @@ struct TodayView: View {
                            detailRoute: .metric(HeroRingMetric.rest),
                            caption: restIsPendingSync ? "Pending sync" : nil,
                            captionWidth: ring) { restRing(diameter: ring) }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .center)
         // Zero-impact width reader: a clear background that publishes the row's width up via preference. It
@@ -3294,6 +3307,23 @@ struct TodayView: View {
         .onPreferenceChange(HeroRingRowWidthKey.self) { w in
             if w > 1 && abs(w - heroRingRowWidth) > 0.5 { heroRingRowWidth = w }
         }
+    }
+
+    /// `ScoreVisibility.hidden` substitute for the hero trio: raw measurements at the same ring
+    /// footprint as the Charge/Effort/Rest rings they replace, non-interactive (there is no score to
+    /// open a breakdown/trend for) — see `RawMetricHeroCell`. Mirrors `LiquidTodayView.heroRawMetricRow`.
+    @ViewBuilder
+    private func rawMetricHeroRow(d: DailyMetric?, diameter: CGFloat) -> some View {
+        RawMetricHeroCell(symbol: "waveform.path.ecg",
+                          primary: d?.avgHrv.map { String(Int($0.rounded())) }, primaryUnit: "ms",
+                          secondary: d?.restingHr.map { "RHR \($0)" },
+                          label: String(localized: "HRV"), diameter: diameter, tint: StrandPalette.chargeColor)
+        RawMetricHeroCell(symbol: "flame.fill",
+                          primary: d?.activeKcalEst.map { String(Int($0.rounded())) }, primaryUnit: "kcal",
+                          label: String(localized: "Active"), diameter: diameter, tint: StrandPalette.effortColor)
+        RawMetricHeroCell(symbol: "bed.double.fill",
+                          primary: d?.totalSleepMin.map { RawMetricHeroCell.hoursMinutes($0) },
+                          label: String(localized: "Asleep"), diameter: diameter, tint: StrandPalette.restColor)
     }
 
     /// The localized natural-case display word for a score domain (Charge / Effort / Rest / Stress). The
@@ -5623,7 +5653,7 @@ private struct RecordingStatusLight: View {
         switch state {
         case .recording:           return StrandPalette.statusPositive
         case .lastSynced:          return StrandPalette.statusWarning
-        case .notRecording:        return Color(red: 0.98, green: 0.27, blue: 0.23)
+        case .notRecording:        return StrandPalette.statusCritical
         case .historyExperimental: return StrandPalette.accent
         case .connectedNoData:     return StrandPalette.accent
         }

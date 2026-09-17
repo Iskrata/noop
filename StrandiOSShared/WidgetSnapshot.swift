@@ -40,12 +40,20 @@ public struct WidgetSnapshot: Codable, Equatable {
     /// so the widget cannot show yesterday's afternoon under today's date while waiting for the first
     /// scorable hour after midnight.
     public var stressDay: Int?
+    /// Mirrors the app's `ScoreVisibility.hidden` (#hide-scores) into the App Group so the widget
+    /// extension — a separate process that cannot read the app's plain `UserDefaults.standard` — can
+    /// hide Charge/Effort/Rest and show raw measurements instead. `recovery`/`effort`/`rest` themselves
+    /// are left populated rather than nulled: the widget still needs them to render the raw substitute's
+    /// tint/context, and nulling would also indistinguishably read as "not yet scored" (`.unavailable`).
+    /// Optional with a nil default so a snapshot written by an older build still decodes; nil reads as
+    /// `false` (unhidden), matching a build that predates this flag.
+    public var hideScores: Bool?
 
     public init(recovery: Int?, bpm: Int?, batteryPct: Int?, bonded: Bool, updated: Date,
                 effort: Int? = nil, rest: Int? = nil, hrv: Int? = nil, restingHr: Int? = nil,
                 effortDisplay: String? = nil, effortWhoop: Bool? = nil,
                 hrSeries: [HrPoint]? = nil, stressSeries: [StressPoint]? = nil,
-                stressDay: Int? = nil) {
+                stressDay: Int? = nil, hideScores: Bool? = nil) {
         self.recovery = recovery
         self.bpm = bpm
         self.batteryPct = batteryPct
@@ -60,6 +68,7 @@ public struct WidgetSnapshot: Codable, Equatable {
         self.hrSeries = hrSeries
         self.stressSeries = stressSeries
         self.stressDay = stressDay
+        self.hideScores = hideScores
     }
 
     /// The curve to DRAW: what was published, unless it belongs to a day that is over.
@@ -229,6 +238,7 @@ public struct WidgetSnapshot: Codable, Equatable {
             // midnight still reaches WidgetKit even when the new day has no scored hour yet.
             || previous.stressSeries != next.stressSeries
             || previous.stressDay != next.stressDay
+            || previous.hideScores != next.hideScores
     }
 
     /// A live-only update may reuse score fields only within the same local calendar day. At rollover,

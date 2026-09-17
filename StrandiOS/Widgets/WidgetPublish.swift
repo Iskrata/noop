@@ -1,6 +1,7 @@
 #if os(iOS)
 import Foundation
 import WidgetKit
+import StrandDesign
 
 extension WidgetSnapshot {
     /// The ACTIVE device's charge for the widget (#2075).
@@ -114,7 +115,8 @@ extension WidgetSnapshot {
             // nil when the curve could not be scored at all, which must not blank a widget that already
             // has one: carry the stored values forward instead of publishing an absence.
             stressSeries: stressPoints ?? storedStress?.stressSeries,
-            stressDay: stress?.day ?? storedStress?.stressDay
+            stressDay: stress?.day ?? storedStress?.stressDay,
+            hideScores: ScoreVisibility.hidden
         )
         saveAndReloadIfChanged(snap)
     }

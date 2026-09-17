@@ -1,5 +1,6 @@
 import Foundation
 import UserNotifications
+import StrandDesign
 
 // MARK: - Target-strain notification (#593)
 //
@@ -59,6 +60,11 @@ enum StrainTargetNotifier {
     /// once they're re-enabled while the same day still shows the reached target (Android twin behaviour).
     static func onDayUpdate(day: String, dayStrain21: Double?, target21: Int?, enabled: Bool) {
         let d = UserDefaults.standard
+        // #hide-scores: the copy quotes a strain NUMBER ("optimal strain target of 12"), so it is a
+        // score-based notification even though the toggle above is a separate, independent opt-in. Gated
+        // HERE (the I/O layer), not inside `StrainTargetPolicy`, which stays byte-identical to the
+        // Android twin and pinned by `StrainTargetPolicyTests` — Android has no such flag.
+        guard !ScoreVisibility.hidden else { return }
         guard StrainTargetPolicy.shouldNotify(enabled: enabled,
                                               dayStrain: dayStrain21,
                                               target: target21.map(Double.init),
