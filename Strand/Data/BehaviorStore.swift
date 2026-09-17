@@ -57,6 +57,13 @@ final class BehaviorStore: ObservableObject {
     /// recovery-derived optimal band. Default OFF like every other automation.
     @Published var strainTargetNudge: Bool { didSet { d.set(strainTargetNudge, forKey: K.strainTargetNudge) } }
 
+    // MARK: Strap sync alert
+    /// Notify when the strap hasn't synced for `StaleSyncAlertPolicy.threshold` (3h) — catches iOS
+    /// killing NOOP overnight, or a swipe-away from the app switcher, either of which silently loses a
+    /// night of recovery data. Default ON: the loss is otherwise silent, matching `batteryAlerts`' (#368)
+    /// default-on precedent.
+    @Published var staleSyncAlert: Bool { didSet { d.set(staleSyncAlert, forKey: K.staleSyncAlert) } }
+
     private let d = UserDefaults.standard
     private enum K {
         static let dtAction = "behavior.doubleTapAction"
@@ -80,6 +87,7 @@ final class BehaviorStore: ObservableObject {
         static let batteryAlerts = "behavior.batteryAlerts"
         static let batteryPredictiveAlerts = "behavior.batteryPredictiveAlerts"
         static let strainTargetNudge = "behavior.strainTargetNudge"
+        static let staleSyncAlert = "behavior.staleSyncAlert"
     }
 
     init() {
@@ -102,6 +110,7 @@ final class BehaviorStore: ObservableObject {
         batteryAlerts = d.object(forKey: K.batteryAlerts) as? Bool ?? true
         batteryPredictiveAlerts = d.object(forKey: K.batteryPredictiveAlerts) as? Bool ?? true
         strainTargetNudge = d.object(forKey: K.strainTargetNudge) as? Bool ?? false
+        staleSyncAlert = d.object(forKey: K.staleSyncAlert) as? Bool ?? true
     }
 
     // MARK: Charge baseline recalibration

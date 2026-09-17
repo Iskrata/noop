@@ -382,6 +382,17 @@ final class AppModel: ObservableObject {
                 Task { [weak self] in await self?.refreshAfterCompletedBackfill() }
             }
             .store(in: &hrCancellables)
+        // Stale-sync alert: every successful sync (including the #755 per-slice stamps above, and the
+        // one-time DB-seeded restore on cold launch — see `seedLastSyncFromActiveStrap`) re-arms the
+        // pre-armed 3h notification. Deliberately NOT debounced like the sink above: re-arming is a
+        // cheap cancel-and-replace, not a heavyweight refresh, so every stamp gets to push the window
+        // forward immediately rather than waiting out the 2s quiet period.
+        live.$lastSyncedAt
+            .dropFirst()
+            .compactMap { $0 }
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.armStaleSyncAlert() }
+            .store(in: &hrCancellables)
 
         moments = (UserDefaults.standard.array(forKey: "moments") as? [Double] ?? [])
             .map { Date(timeIntervalSince1970: $0) }
@@ -708,6 +719,27 @@ final class AppModel: ObservableObject {
         // exist. The bridge coalesces a call that lands during an in-flight write-back.
         await healthWriteBack?()
         #endif
+    }
+
+    // MARK: - Strap sync alert
+
+    /// Whether a strap is currently paired — i.e. NOT deliberately unpaired. Mirrors `DevicesView`'s own
+    /// `activeDevices` filter (`registry.devices.filter { $0.status != .archived }`) rather than a second
+    /// definition of "paired": an archived row means the user removed that strap, and a registry that
+    /// hasn't loaded yet (`deviceRegistry == nil`, pre store-open) has nothing confirmed paired either.
+    var hasPairedStrap: Bool {
+        deviceRegistry?.devices.contains { $0.status != .archived } ?? false
+    }
+
+    /// (Re)arm the pre-armed stale-sync notification from the current known state. The single call site
+    /// for all three re-arm points: a successful sync (the `live.$lastSyncedAt` sink above), app
+    /// launch/foreground (`StrandApp`/`StrandiOSApp`'s `scenePhase == .active` handler, alongside
+    /// `applySmartAlarm()`), and the "Strap sync alert" toggle changing in `AutomationsView`.
+    func armStaleSyncAlert(now: TimeInterval = Date().timeIntervalSince1970) {
+        StaleSyncAlertNotifier.arm(now: now,
+                                   lastSyncedAt: live.lastSyncedAt,
+                                   hasPairedStrap: hasPairedStrap,
+                                   enabled: behavior.staleSyncAlert)
     }
 
     private func refreshAfterCompletedBackfill() async {
