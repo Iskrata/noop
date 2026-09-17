@@ -1186,10 +1186,12 @@ final class HealthKitBridge: ObservableObject {
     /// when its fingerprint moves, and cleared if it stops being exportable. Series are immutable, so a
     /// rewrite deletes the night's series by key (scoped to our own `HKSource`) before writing; the
     /// fingerprint is recorded only after the whole night is written, so a failure mid-night retries.
-    /// UserDefaults key for the "Beat-to-beat heart rate" export switch (fork). Off by default while it is
-    /// checked whether Bevel's Recovery stops appearing once NOOP's heartbeat series are in Health.
+    /// UserDefaults key for the "Beat-to-beat heart rate" export switch (fork). On by default; it exists so the
+    /// export can be switched off if a reader of Health (Bevel's Recovery) turns out not to accept the series.
     static let heartbeatExportEnabledKey = "noop.health.exportHeartbeats"
-    static var heartbeatExportEnabled: Bool { UserDefaults.standard.bool(forKey: heartbeatExportEnabledKey) }
+    static var heartbeatExportEnabled: Bool {
+        UserDefaults.standard.object(forKey: heartbeatExportEnabledKey) as? Bool ?? true
+    }
 
     private func writeHeartbeats(whoopStore: WhoopStore, sessions: [CachedSleepSession]) async throws {
         let type = HKSeriesType.heartbeat()

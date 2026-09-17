@@ -368,7 +368,7 @@ struct AppleHealthView: View {
     // runs the first read + write-back and refreshes this screen. Once authorized, a "Sync now"
     // control and last-synced/status line take its place.
     #if os(iOS)
-    @AppStorage(HealthKitBridge.heartbeatExportEnabledKey) private var exportHeartbeats = false
+    @AppStorage(HealthKitBridge.heartbeatExportEnabledKey) private var exportHeartbeats = true
 
     @ViewBuilder
     private var liveSyncCard: some View {
