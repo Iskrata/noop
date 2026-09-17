@@ -1186,6 +1186,11 @@ final class HealthKitBridge: ObservableObject {
     /// when its fingerprint moves, and cleared if it stops being exportable. Series are immutable, so a
     /// rewrite deletes the night's series by key (scoped to our own `HKSource`) before writing; the
     /// fingerprint is recorded only after the whole night is written, so a failure mid-night retries.
+    /// UserDefaults key for the "Beat-to-beat heart rate" export switch (fork). Off by default while it is
+    /// checked whether Bevel's Recovery stops appearing once NOOP's heartbeat series are in Health.
+    static let heartbeatExportEnabledKey = "noop.health.exportHeartbeats"
+    static var heartbeatExportEnabled: Bool { UserDefaults.standard.bool(forKey: heartbeatExportEnabledKey) }
+
     private func writeHeartbeats(whoopStore: WhoopStore, sessions: [CachedSleepSession]) async throws {
         let type = HKSeriesType.heartbeat()
         guard store.authorizationStatus(for: type) == .sharingAuthorized else {
@@ -1196,8 +1201,11 @@ final class HealthKitBridge: ObservableObject {
         let strictWhoop5 = (try? await whoopStore.isWhoop5RRSource(deviceId: noopDeviceId)) ?? true
         var nights: [(key: String, fingerprint: String?)] = []
         var beatsByKey: [String: (ts: [Int], rr: [Int])] = [:]
+        let exportEnabled = Self.heartbeatExportEnabled
         for entry in sleepPlan(sessions: sessions) where entry.spanEnd <= nowTs {
             let key = HealthWriteback.appleHealthHeartbeatKey(startTs: entry.keyStartTs)
+            // Export switched off: every night reads as not exportable, so the plan clears what was written.
+            guard exportEnabled else { nights.append((key, nil)); continue }
             let rows = (try? await whoopStore.rrIntervals(deviceId: noopDeviceId, from: entry.spanStart,
                                                           to: entry.spanEnd, limit: StreamReadCap.rr,
                                                           unlabelledAliasOfWhoop5: strictWhoop5)) ?? []

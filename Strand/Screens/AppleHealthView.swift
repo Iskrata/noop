@@ -368,6 +368,8 @@ struct AppleHealthView: View {
     // runs the first read + write-back and refreshes this screen. Once authorized, a "Sync now"
     // control and last-synced/status line take its place.
     #if os(iOS)
+    @AppStorage(HealthKitBridge.heartbeatExportEnabledKey) private var exportHeartbeats = false
+
     @ViewBuilder
     private var liveSyncCard: some View {
         StrandCard(padding: 20, tint: StrandPalette.metricCyan) {
@@ -467,6 +469,20 @@ struct AppleHealthView: View {
                     .buttonStyle(.bordered)
                     .tint(StrandPalette.metricCyan)
                     .disabled(health.syncing)
+                    Toggle(isOn: $exportHeartbeats) {
+                        Text("Write beat-to-beat heart rate")
+                            .font(StrandFont.subhead)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                    }
+                    .tint(StrandPalette.metricCyan)
+                    .onChange(of: exportHeartbeats) { _, _ in
+                        // Turning it off removes the series NOOP already wrote on the next write-back.
+                        Task { await health.writeBackAfterNewData() }
+                    }
+                    Text("Each night's R-R intervals as heartbeat series, for apps that compute their own HRV. Turning it off removes the ones NOOP wrote.")
+                        .font(StrandFont.caption)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let err = health.lastError {
