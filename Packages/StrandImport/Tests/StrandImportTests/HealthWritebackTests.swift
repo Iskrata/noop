@@ -369,6 +369,25 @@ final class HealthWritebackTests: XCTestCase {
                        ["d0": start + 4 * 3600, "d1": start + 86_400 + 3 * 3600])
     }
 
+    /// A bridged night whose midpoint falls in the awake gap between fragments is stamped at the nearest
+    /// asleep second instead.
+    func testAMidpointInABridgedWakeGapMovesToTheNearestAsleepSecond() {
+        let bridged = HealthWriteback.MergedSleepEntry(
+            keyStartTs: start, spanStart: start, spanEnd: start + 8 * 3600,
+            intervals: [.init(start: start, end: start + 3 * 3600, kind: .light),
+                        .init(start: start + 3 * 3600, end: start + 4 * 3600 + 1800, kind: .awake),
+                        .init(start: start + 4 * 3600 + 1800, end: start + 8 * 3600, kind: .deep)],
+            allKeyStartTs: [start, start + 4 * 3600 + 1800])
+        XCTAssertEqual(HealthWriteback.vitalsInstantByDay([bridged], dayOf: dayOf), ["d0": start + 4 * 3600 + 1800])
+    }
+
+    func testAMidpointInsideAnAsleepIntervalStays() {
+        let night = HealthWriteback.MergedSleepEntry(
+            keyStartTs: start, spanStart: start, spanEnd: start + 8 * 3600,
+            intervals: [.init(start: start, end: start + 8 * 3600, kind: .unspecified)], allKeyStartTs: [start])
+        XCTAssertEqual(HealthWriteback.vitalsInstantByDay([night], dayOf: dayOf), ["d0": start + 4 * 3600])
+    }
+
     func testANightWithNoSpanStampsNothing() {
         XCTAssertEqual(HealthWriteback.vitalsInstantByDay([entry(start, start)], dayOf: dayOf), [:])
     }
@@ -397,6 +416,21 @@ final class HealthWritebackTests: XCTestCase {
         let plan = HealthWriteback.heartbeatSeriesPlan(tsSec: [1_000, 1_001, 1_060], rrMs: [1_000, 1_000, 1_000])
         assertOffsets(plan[0], [0, 1, 60])
         XCTAssertEqual(plan[0].beats.map(\.precededByGap), [false, false, true])
+    }
+
+    func testARowStampedBehindThePlacedBeatsIsDroppedSoTheSeriesStaysInOrder() {
+        // Shape from a real night: the placed beats run 1.8 s ahead of the stamps, then a 676 ms row also
+        // stamped 1 002 predicts 1 004.476, outside the tolerance, and its own stamp is behind the beat
+        // already placed at 1 003.8. Placing it there is the out-of-order add HealthKit rejects.
+        let plan = HealthWriteback.heartbeatSeriesPlan(tsSec: [1_000, 1_001, 1_002, 1_002, 1_004],
+                                                       rrMs: [1_000, 1_900, 1_900, 676, 900])
+        assertOffsets(plan[0], [0, 1.9, 3.8, 4.7])
+        XCTAssertEqual(plan[0].beats.map(\.precededByGap), [false, false, false, false])
+    }
+
+    func testARowStampedExactlyOnThePlacedBeatIsDropped() {
+        let plan = HealthWriteback.heartbeatSeriesPlan(tsSec: [1_000, 1_003, 1_003], rrMs: [1_000, 3_000, 2_033])
+        assertOffsets(plan[0], [0, 3])
     }
 
     func testSeriesSplitAtFiveMinutes() {
