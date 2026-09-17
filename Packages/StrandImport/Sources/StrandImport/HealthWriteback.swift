@@ -253,6 +253,12 @@ public enum HealthWriteback {
     /// Beat times from stored R-R rows (`tsSec` parallel to `rrMs`, ascending). Each beat lands one interval
     /// after the previous; a row whose stamp disagrees with that by more than the tolerance starts again from
     /// its own stamp as a gap. Chunks split at `heartbeatChunkSeconds`. Non-positive intervals are skipped.
+    ///
+    /// A row stamped at or before the beat already placed is dropped. HealthKit refuses a series whose beats
+    /// do not strictly advance ("Heartbeats must be added in order"), and one such row failed the whole
+    /// night. It happens when the placed beats run ahead of their whole-second stamps: a phone copy of 15
+    /// real nights had 0 to 29 per night, the previous beat sitting 0 to 1.9 s past the late row's stamp.
+    /// The beat after a dropped one is still predicted from the last beat placed, so the train carries on.
     public static func heartbeatSeriesPlan(tsSec: [Int], rrMs: [Int]) -> [HeartbeatSeriesChunk] {
         guard tsSec.count == rrMs.count else { return [] }
         var chunks: [HeartbeatSeriesChunk] = []
@@ -266,6 +272,7 @@ public enum HealthWriteback {
             if let previous {
                 let predicted = previous + Double(rr) / 1_000
                 if abs(predicted - stamp) <= heartbeatGapToleranceSeconds { time = predicted; gap = false }
+                else if stamp <= previous { continue }
             }
             if beats.isEmpty || time - chunkStart >= heartbeatChunkSeconds {
                 if !beats.isEmpty { chunks.append(.init(start: chunkStart, beats: beats)) }

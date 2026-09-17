@@ -399,6 +399,21 @@ final class HealthWritebackTests: XCTestCase {
         XCTAssertEqual(plan[0].beats.map(\.precededByGap), [false, false, true])
     }
 
+    func testARowStampedBehindThePlacedBeatsIsDroppedSoTheSeriesStaysInOrder() {
+        // Shape from a real night: the placed beats run 1.8 s ahead of the stamps, then a 676 ms row also
+        // stamped 1 002 predicts 1 004.476, outside the tolerance, and its own stamp is behind the beat
+        // already placed at 1 003.8. Placing it there is the out-of-order add HealthKit rejects.
+        let plan = HealthWriteback.heartbeatSeriesPlan(tsSec: [1_000, 1_001, 1_002, 1_002, 1_004],
+                                                       rrMs: [1_000, 1_900, 1_900, 676, 900])
+        assertOffsets(plan[0], [0, 1.9, 3.8, 4.7])
+        XCTAssertEqual(plan[0].beats.map(\.precededByGap), [false, false, false, false])
+    }
+
+    func testARowStampedExactlyOnThePlacedBeatIsDropped() {
+        let plan = HealthWriteback.heartbeatSeriesPlan(tsSec: [1_000, 1_003, 1_003], rrMs: [1_000, 3_000, 2_033])
+        assertOffsets(plan[0], [0, 3])
+    }
+
     func testSeriesSplitAtFiveMinutes() {
         let ts = Array(0..<601).map { 1_000 + $0 }
         let plan = HealthWriteback.heartbeatSeriesPlan(tsSec: ts, rrMs: ts.map { _ in 1_000 })
