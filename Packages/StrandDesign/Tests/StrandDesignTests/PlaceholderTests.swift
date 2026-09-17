@@ -3,6 +3,22 @@ import SwiftUI
 @testable import StrandDesign
 
 final class StrandDesignTests: XCTestCase {
+    // These tests assert against the TITANIUM-specific literals (`recovery000`, `strain100`, …), so they
+    // pin `chartStyle` explicitly rather than relying on whatever the app's current default happens to
+    // be — `.whoop` since 2026-09-17 (#whoop-palette). Restored in `tearDown` so this file's tests never
+    // leak state into a test that runs after them in the same process.
+    private var savedChartStyle: ChartStyle!
+
+    override func setUp() {
+        super.setUp()
+        savedChartStyle = StrandPalette.chartStyle
+        StrandPalette.chartStyle = .titanium
+    }
+
+    override func tearDown() {
+        StrandPalette.chartStyle = savedChartStyle
+        super.tearDown()
+    }
 
     func testVersion() {
         XCTAssertEqual(StrandDesign.version, "0.1.0")

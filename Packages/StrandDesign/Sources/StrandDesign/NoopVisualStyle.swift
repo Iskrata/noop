@@ -7,18 +7,26 @@ import SwiftUI
 // bindings, while cards, gauges, typography, and chrome share one maintainable source of truth.
 
 public enum NoopVisualStyle {
-    // Neutral, low-chroma surfaces sampled from the supplied dark-mode reference.
-    public static let canvas = Color(light: "#F3F4F6", dark: "#1D1E23")
-    public static let surface = Color(light: "#FFFFFF", dark: "#2A2C34")
-    public static let surfaceTop = Color(light: "#FFFFFF", dark: "#30323B")
-    public static let surfaceBottom = Color(light: "#F4F5F7", dark: "#282A31")
-    public static let inset = Color(light: "#E8E9ED", dark: "#23252C")
+    // Neutral, low-chroma surfaces. DARK re-anchored 2026-09-17 on WHOOP's own official "Background
+    // Gradient" (#283339 → #101518, from the same sourced Brand & Design Guidelines PDF cited above
+    // `StrandPalette.whoopStrain`) so this fork's dark mode reads near-black like WHOOP's, not the
+    // previous dark-navy-grey. `canvas` takes the darker stop, `surface` the lighter one (WHOOP's own
+    // background gradient describes screen depth, not cards, but the two stops map cleanly onto NOOP's
+    // base/card split). `surfaceTop`/`surfaceBottom`/`inset`/`border`/`borderHighlight`/`divider` keep
+    // the SAME relative offsets from `surface` that the previous values had, so the existing top-lit
+    // card gradient and hairline contrast survive the re-anchor unchanged — only the base tone moved.
+    // LIGHT is untouched (WHOOP ships dark-only, so there is nothing WHOOP-sourced to move it to).
+    public static let canvas = Color(light: "#F3F4F6", dark: "#101518")
+    public static let surface = Color(light: "#FFFFFF", dark: "#283339")
+    public static let surfaceTop = Color(light: "#FFFFFF", dark: "#2E3940")
+    public static let surfaceBottom = Color(light: "#F4F5F7", dark: "#263136")
+    public static let inset = Color(light: "#E8E9ED", dark: "#1C2428")
 
-    public static let border = Color(light: "#D8DAE0", dark: "#373A44")
-    public static let borderHighlight = Color(light: "#FFFFFF", dark: "#4B4E59")
-    public static let divider = Color(light: "#E4E5E9", dark: "#383A43")
+    public static let border = Color(light: "#D8DAE0", dark: "#354149")
+    public static let borderHighlight = Color(light: "#FFFFFF", dark: "#495569")
+    public static let divider = Color(light: "#E4E5E9", dark: "#364148")
 
-    public static let primaryText = Color(light: "#17181C", dark: "#F7F7FA")
+    public static let primaryText = Color(light: "#17181C", dark: "#FFFFFF") // WHOOP WHITE #FFFFFF (sourced)
     public static let secondaryText = Color(light: "#555861", dark: "#C3C4CA")
     public static let tertiaryText = Color(light: "#7D808A", dark: "#7D7F88")
 

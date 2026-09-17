@@ -717,13 +717,16 @@ struct WorkoutRouteMap: RouteMapRepresentable {
     #endif
 }
 
-/// The route stroke colour as a platform colour (MapKit's renderer can't take a SwiftUI `Color`). A fixed
-/// Effort-amber so it reads in the same colour world as the rest of the screen on both platforms.
+/// The route stroke colour as a platform colour (MapKit's renderer can't take a SwiftUI `Color`).
+/// Bridged from `StrandPalette.effortColor` (was a hardcoded amber literal that bypassed the palette and
+/// so never followed a `chartStyle`/theme change) so it reads in the same colour world as the rest of the
+/// screen on both platforms. `Color(light:dark:)` is a dynamic `UIColor`/`NSColor` provider under the
+/// hood, so wrapping it still resolves per the active appearance.
 private enum RoutePlatformColor {
     #if canImport(UIKit)
-    static let effort = UIColor(red: 0.98, green: 0.62, blue: 0.16, alpha: 1.0)
+    static var effort: UIColor { UIColor(StrandPalette.effortColor) }
     #elseif canImport(AppKit)
-    static let effort = NSColor(red: 0.98, green: 0.62, blue: 0.16, alpha: 1.0)
+    static var effort: NSColor { NSColor(StrandPalette.effortColor) }
     #endif
 }
 #else

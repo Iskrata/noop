@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// The data-visualisation colour style: the brand "Titanium & Gold" data ramps, or a "Classic"
+/// The data-visualisation colour style: the brand "Titanium & Gold" data ramps, a "Classic"
 /// throwback — the recognizable red → amber → green readiness scale (cool→hot zones, green→red stress,
-/// purple REM) that health apps have always used. Works in BOTH light and dark. It only re-colours the
-/// DATA encodings (gauge rings, charts, sparklines, scales, stage bands) — never the chrome/surfaces.
+/// purple REM) that health apps have always used — or "WHOOP", this fork's default, which sources its
+/// recovery bands, strain blue and sleep blue-grey from WHOOP's own brand palette (see the sourced
+/// comment above `StrandPalette.whoopStrain`). Works in BOTH light and dark. It only re-colours the DATA
+/// encodings (gauge rings, charts, sparklines, scales, stage bands) — never the chrome/surfaces.
 ///
 /// Read globally via `StrandPalette.chartStyle` (set from `@AppStorage(ChartStyle.storageKey)` at the
 /// app root); the data-ramp accessors in `StrandPalette` branch on it. The app root keys its content on
@@ -11,6 +13,8 @@ import SwiftUI
 public enum ChartStyle: String, CaseIterable, Identifiable, Sendable {
     case titanium   // brand: gold recovery, amber strain, blue rest
     case classic    // throwback: red→green recovery, cool→hot zones, green→red stress
+    case whoop      // this fork's default: WHOOP-sourced green/yellow/red recovery bands, WHOOP strain
+                     // blue, WHOOP sleep blue-grey (#whoop-palette)
 
     public var id: String { rawValue }
     public static let storageKey = "chart.style"
@@ -19,10 +23,11 @@ public enum ChartStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .titanium: return String(localized: "Default", bundle: .module)
         case .classic:  return String(localized: "Classic", bundle: .module)
+        case .whoop:    return "WHOOP"
         }
     }
 
-    public static func resolve(_ raw: String) -> ChartStyle { ChartStyle(rawValue: raw) ?? .titanium }
+    public static func resolve(_ raw: String) -> ChartStyle { ChartStyle(rawValue: raw) ?? .whoop }
 }
 
 /// The Sleep tab's stage-CHART shape (distinct from `ChartStyle`, which is colours): the long-standing
@@ -107,13 +112,17 @@ public enum AccentColor: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    public static func resolve(_ raw: String) -> AccentColor { AccentColor(rawValue: raw) ?? .mint }
+    /// This fork's default is `.whoopBlue`, not the brand `.mint` upstream keeps.
+    public static func resolve(_ raw: String) -> AccentColor { AccentColor(rawValue: raw) ?? .whoopBlue }
 
-    /// The chrome accent. `.custom` resolves the stored hex at read time.
+    /// The chrome accent. `.custom` resolves the stored hex at read time. `.whoopBlue` reuses
+    /// `StrandPalette.whoopStrain` (WHOOP's own sourced Strain hex) rather than its own literal, so the
+    /// app's one "brand blue" is a single value instead of near-identical hexes drifting apart across
+    /// the chrome accent and the Effort/Strain data colour.
     public var accent: Color {
         switch self {
         case .mint:      return NoopVisualStyle.mint
-        case .whoopBlue: return Color(light: "#234F9E", dark: "#60A0E0")
+        case .whoopBlue: return StrandPalette.whoopStrain
         case .custom:    return Color(hex: StrandPalette.customAccentHex)
         }
     }
@@ -122,7 +131,7 @@ public enum AccentColor: String, CaseIterable, Identifiable, Sendable {
     public var accentHover: Color {
         switch self {
         case .mint:      return NoopVisualStyle.mintGlow
-        case .whoopBlue: return Color(light: "#3A6FC0", dark: "#8FBEEC")
+        case .whoopBlue: return StrandPalette.whoopStrainBright
         case .custom:    return AccentColor.lighten(StrandPalette.customAccentHex)
         }
     }
@@ -132,7 +141,7 @@ public enum AccentColor: String, CaseIterable, Identifiable, Sendable {
     public var accentMuted: Color {
         switch self {
         case .mint:      return NoopVisualStyle.mintDeep.opacity(0.18)
-        case .whoopBlue: return Color(light: "#234F9E", dark: "#60A0E0").opacity(0.18)
+        case .whoopBlue: return StrandPalette.whoopStrain.opacity(0.18)
         case .custom:    return Color(hex: StrandPalette.customAccentHex).opacity(0.18)
         }
     }
@@ -171,6 +180,7 @@ public enum ThemePreset: String, CaseIterable, Identifiable, Sendable {
     case classic    // WHOOP-blue accent, Classic throwback charts, backdrop on, solid
     case midnight   // mint accent, Titanium charts, backdrop OFF (plain canvas), solid
     case frosted    // mint accent, Titanium charts, backdrop on, translucent cards
+    case whoop      // this fork's default: WHOOP-blue accent, WHOOP charts, backdrop on, solid
     case custom     // sentinel: the live combination matches no preset
 
     public var id: String { rawValue }
@@ -182,6 +192,7 @@ public enum ThemePreset: String, CaseIterable, Identifiable, Sendable {
         case .classic:  return String(localized: "Classic", bundle: .module)
         case .midnight: return String(localized: "Midnight", bundle: .module)
         case .frosted:  return String(localized: "Frosted", bundle: .module)
+        case .whoop:    return "WHOOP"
         case .custom:   return String(localized: "Custom", bundle: .module)
         }
     }
@@ -203,6 +214,7 @@ public enum ThemePreset: String, CaseIterable, Identifiable, Sendable {
         case .classic:  return Recipe(accent: .whoopBlue, chart: .classic,  backdrop: true,  cardOpacity: 100)
         case .midnight: return Recipe(accent: .mint,      chart: .titanium, backdrop: false, cardOpacity: 100)
         case .frosted:  return Recipe(accent: .mint,      chart: .titanium, backdrop: true,  cardOpacity: 85)
+        case .whoop:    return Recipe(accent: .whoopBlue, chart: .whoop,    backdrop: true,  cardOpacity: 100)
         case .custom:   return nil
         }
     }
@@ -210,7 +222,8 @@ public enum ThemePreset: String, CaseIterable, Identifiable, Sendable {
     /// The presets a user can pick (everything except the derived `.custom` sentinel).
     public static var selectable: [ThemePreset] { allCases.filter { $0 != .custom } }
 
-    public static func resolve(_ raw: String) -> ThemePreset { ThemePreset(rawValue: raw) ?? .mint }
+    /// This fork's default is WHOOP, not the brand `.mint` upstream keeps.
+    public static func resolve(_ raw: String) -> ThemePreset { ThemePreset(rawValue: raw) ?? .whoop }
 
     /// Which preset the live prefs correspond to, or `.custom` when none match.
     public static func matching(accent: AccentColor, chart: ChartStyle,
