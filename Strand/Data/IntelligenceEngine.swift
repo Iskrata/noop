@@ -775,6 +775,8 @@ final class IntelligenceEngine: ObservableObject {
         // also counts every minute the process spent suspended mid-pass. One overnight pass suspended by a
         // sleeping phone banked 19 003 s, which then deferred every background re-score after it.
         let reScoreStart = DispatchTime.now().uptimeNanoseconds
+        let reScoreCPUStart = RescoreBackgroundScheduler.processCPUSeconds()
+        let reScoreExpiriesAtStart = RescoreBackgroundScheduler.assertionExpiries
         computing = true
         // #1538: the pass is now past every gate and will do real work. Mark it started durably, so that a
         // process killed mid-pass leaves evidence a LATER process can read — the killed process itself gets
@@ -2903,6 +2905,11 @@ final class IntelligenceEngine: ObservableObject {
         diagnosticSink?("re-score: done — scored \(scoredNights.count) night(s) in \(Int(elapsed * 1000)) ms (#1005)", nil)
         completedPasses += 1
         lastCompletedPassDays = maxDays
+        diagnosticSink?(RescoreBackgroundScheduler.passCostLogLine(
+            cpuSeconds: RescoreBackgroundScheduler.processCPUSeconds().flatMap { end in reScoreCPUStart.map { end - $0 } },
+            elapsedSeconds: elapsed,
+            assertionExpiries: RescoreBackgroundScheduler.assertionExpiries - reScoreExpiriesAtStart,
+            backgroundedAtEnd: RescoreBackgroundScheduler.isBackgrounded), nil)
         // #1681: a pass that completes while leaving the mark SET looks identical in a capture to one that
         // cleared it. Rare-event evidence, so always-on: it costs a line only when it actually happens,
         // and it is exactly what is missing when someone reports the app re-scoring on every launch.

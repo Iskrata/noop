@@ -86,6 +86,11 @@ struct StrandiOSApp: App {
         _model = StateObject(wrappedValue: model)
         AppModel.current = model
         incomingCallBuzz = IncomingCallBuzz(buzz: { [weak model] in model?.buzz(loops: 2) })
+        // Settings → "Keep screen on while syncing". Wired once here, not as another modifier on `body`.
+        SyncKeepAwake.shared.attach(to: model.live)
+        // The strap-sync Live Activity (Lock Screen + Dynamic Island). Same placement, same reason — and
+        // it must also run in a process the Sync Strap shortcut launched with no scene.
+        SyncLiveActivityController.shared.attach(to: model.live)
         // The buzz and the strap-gesture claim are injected, so the controller itself knows nothing
         // about BLE and stays testable.
         _liftSession = StateObject(wrappedValue: LiftSessionController(
@@ -214,7 +219,8 @@ struct StrandiOSApp: App {
                     liveActivity.update(
                         bpm: model.live.connected ? (model.bpm ?? model.live.heartRate) : nil,
                         recovery: day?.recovery.map { Int($0.rounded()) },
-                        connected: model.live.connected && !liftSession.isActive,
+                        // While a sync runs its own activity is the useful banner; don't stack the HR one.
+                        connected: model.live.connected && !liftSession.isActive && !model.live.backfilling,
                         effort: day?.strain.map { Int($0.rounded()) }
                     )
                     pushLiftActivity()
@@ -228,7 +234,7 @@ struct StrandiOSApp: App {
                     liveActivity.update(
                         bpm: isConnected ? (model.bpm ?? model.live.heartRate) : nil,
                         recovery: day?.recovery.map { Int($0.rounded()) },
-                        connected: isConnected && !liftSession.isActive,
+                        connected: isConnected && !liftSession.isActive && !model.live.backfilling,
                         effort: day?.strain.map { Int($0.rounded()) }
                     )
                 }
@@ -327,6 +333,8 @@ struct StrandiOSApp: App {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 model.drainPendingIntents(router: router)
+                // End a "Connecting…" sync island whose sync never came, rather than leave it greyed.
+                SyncLiveActivityController.shared.reconcile(live: model.live)
                 // Re-arm the strap's smart alarm on foreground: the firmware alarm is a single instant
                 // and iOS can't re-arm it while suspended, so it would otherwise fire once and stop.
                 model.applySmartAlarm()
