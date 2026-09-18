@@ -481,14 +481,17 @@ final class AppModel: ObservableObject {
             // replace every night it was given before. Runs first: a resting-HR rescore still owed is covered
             // by the same full-history pass, so it is marked done with it rather than paying for a second one.
             let restingHROwed = !UserDefaults.standard.bool(forKey: IntelligenceEngine.restingHRRescoreFlagKey)
-            if await self.intelligence.runEffortRescoreIfNeeded(flagKey: IntelligenceEngine.whoopCalibrationRescoreFlagKey) {
+            let historyDays = await self.intelligence.computedHistorySpanDays()
+            if await self.intelligence.runEffortRescoreIfNeeded(historyDays: historyDays,
+                                                               flagKey: IntelligenceEngine.whoopCalibrationRescoreFlagKey) {
                 UserDefaults.standard.set(true, forKey: IntelligenceEngine.healthHistoryRewriteOwedKey)
                 if restingHROwed {
                     UserDefaults.standard.set(true, forKey: IntelligenceEngine.restingHRRescoreFlagKey)
                     UserDefaults.standard.set(true, forKey: IntelligenceEngine.restingHRHealthRewriteOwedKey)
                 }
             }
-            if await self.intelligence.runEffortRescoreIfNeeded(flagKey: IntelligenceEngine.restingHRRescoreFlagKey) {
+            if await self.intelligence.runEffortRescoreIfNeeded(historyDays: historyDays,
+                                                               flagKey: IntelligenceEngine.restingHRRescoreFlagKey) {
                 UserDefaults.standard.set(true, forKey: IntelligenceEngine.restingHRHealthRewriteOwedKey)
             }
             while !Task.isCancelled {
@@ -1330,8 +1333,15 @@ final class AppModel: ObservableObject {
     @Published private(set) var ouraFeatureStatuses: [Int: OuraFeatureStatus] = [:]
     private var ouraFeatureStatusCancellable: AnyCancellable?
 
-    /// (Re)bind the feature-status mirror to whichever `OuraLiveSource` the coordinator has live, and
-    /// every later swap — same `flatMap`-over-`$ouraSource` shape as `bindOuraAdoptMirror` below.
+    /// The live ring's link phase (`disconnected` / `connecting` / `authenticating` / `authenticated`),
+    /// mirrored off the live Oura source for the Live console's ring status and reconnect affordance
+    /// (#2305). `.disconnected` when no ring source is live. Bound beside the feature-status mirror.
+    @Published private(set) var ouraLinkPhase: OuraLiveSource.LinkPhase = .disconnected
+    private var ouraLinkPhaseCancellable: AnyCancellable?
+
+    /// (Re)bind the feature-status and link-phase mirrors to whichever `OuraLiveSource` the coordinator
+    /// has live, and every later swap — same `flatMap`-over-`$ouraSource` shape as `bindOuraAdoptMirror`
+    /// below.
     private func bindOuraFeatureStatusMirror() {
         guard let coordinator = sourceCoordinator else { return }
         ouraFeatureStatusCancellable = coordinator.$ouraSource
@@ -1341,6 +1351,19 @@ final class AppModel: ObservableObject {
             }
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.ouraFeatureStatuses = $0 }
+        ouraLinkPhaseCancellable = coordinator.$ouraSource
+            .flatMap { source -> AnyPublisher<OuraLiveSource.LinkPhase, Never> in
+                source?.$linkPhase.eraseToAnyPublisher()
+                    ?? Just(.disconnected).eraseToAnyPublisher()
+            }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.ouraLinkPhase = $0 }
+    }
+
+    /// Reconnect the active ring on the user's request from the Live console (#2305). Routed through the
+    /// coordinator so it can only ever reach the ring that is the live source.
+    func reconnectOuraRing() {
+        sourceCoordinator?.reconnectActiveRing()
     }
 
     /// Take over a factory-reset Oura ring: grant the coordinator explicit adopt consent for THIS ring (so
