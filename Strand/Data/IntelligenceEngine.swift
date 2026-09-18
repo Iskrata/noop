@@ -46,6 +46,9 @@ final class IntelligenceEngine: ObservableObject {
     /// `defer` re-invokes `analyzeRecent(force: true)` ONCE when it clears. A single re-arm (the flag is
     /// cleared BEFORE the re-invoke) bounds it to one extra pass , no recompute storm.
     private var pendingForcedRescore = false
+    /// Uptime the pass holding `computing` started at, and how many days it covers; nil when none is running.
+    private var runningPassStart: UInt64?
+    private var runningPassDays = 0
     /// #899 heal bound: true while the last heal already re-armed a rescore, so a heal firing again on
     /// the very next pass cannot re-arm a second time (the Android twin is hard-bounded to exactly one
     /// re-pass; this mirrors it). Reset by any pass whose heal finds nothing, restoring the budget.
@@ -656,7 +659,18 @@ final class IntelligenceEngine: ObservableObject {
         // in-flight pass already covers the same window). But a FORCED call is a real update path (a
         // post-backfill rescore after a sync) , dropping it would leave a freshly-synced night unscored
         // until the next cycle. Re-arm instead: flag it so the running pass's `defer` re-invokes once.
-        guard !computing else { if force { pendingForcedRescore = true }; return }
+        guard !computing else {
+            if force {
+                // Said once per running pass, not per trigger: a pass that holds the lock for hours otherwise
+                // turns every post-offload re-score into a silent no-op, and the log shows syncs but no scores.
+                if !pendingForcedRescore, let started = runningPassStart {
+                    let heldFor = Int(Double(DispatchTime.now().uptimeNanoseconds &- started) / 1_000_000_000)
+                    diagnosticSink?("re-score: queued behind a \(runningPassDays)-day pass running for \(heldFor) s", nil)
+                }
+                pendingForcedRescore = true
+            }
+            return
+        }
         guard let store = await repo.storeHandle() else { note = String(localized: "No on-device store yet."); return }
         guard let hrvCfg = Baselines.metricCfg["hrv"],
               let rhrCfg = Baselines.metricCfg["resting_hr"],
@@ -738,6 +752,8 @@ final class IntelligenceEngine: ObservableObject {
         let reScoreCPUStart = RescoreBackgroundScheduler.processCPUSeconds()
         let reScoreExpiriesAtStart = RescoreBackgroundScheduler.assertionExpiries
         computing = true
+        runningPassStart = reScoreStart
+        runningPassDays = maxDays
         // #1538: the pass is now past every gate and will do real work. Mark it started durably, so that a
         // process killed mid-pass leaves evidence a LATER process can read — the killed process itself gets
         // no chance to record anything. Cleared beside the watermark at the end; there is no early return
@@ -763,6 +779,7 @@ final class IntelligenceEngine: ObservableObject {
         // `computing` is already false, so its own `guard !computing` passes and it rescores the new data.
         defer {
             computing = false
+            runningPassStart = nil
             if pendingForcedRescore {
                 pendingForcedRescore = false
                 // Carry THIS pass's window into the re-pass: a heal firing during a wide one-shot pass

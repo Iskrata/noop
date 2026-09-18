@@ -75,7 +75,16 @@ final class RescoreBackgroundPolicyTests: XCTestCase {
 
     /// Resting as long as it worked holds a backgrounded pass near 50% CPU, under the 80% iOS kills at.
     func testABackgroundedPassRestsAsLongAsItWorked() {
-        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: 6, isBackground: true), 6)
+        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: 12, isBackground: true), 12)
+    }
+
+    /// Short units run back to back until a quantum of work has built up: every rest is a chance for iOS to
+    /// suspend the process until the next wake, so resting after each night advanced a pass one night a wake.
+    func testWorkUnderAQuantumDoesNotRest() {
+        let quantum = RescoreBackgroundPolicy.backgroundWorkQuantumSeconds
+        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: 0.05, isBackground: true), 0)
+        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: quantum - 0.01, isBackground: true), 0)
+        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: quantum, isBackground: true), quantum)
     }
 
     /// No CPU limit applies in the foreground, and the user is waiting on the result.
