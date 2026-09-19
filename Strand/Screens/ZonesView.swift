@@ -12,6 +12,9 @@ struct ZonesView: View {
     /// balanced by exactly one stop.
     @State private var holdsRealtime = false
     @State private var visible = false
+    /// Fork: the stream starts only when the user taps Start (it used to arm on every visit); leaving the tab
+    /// or backgrounding the app still releases it, and a return shows Start again.
+    @State private var running = false
 
     private var zoneSet: HRZoneSet { model.profile.hrZoneSet }
     private var zone: Int { model.bpm.map { zoneSet.zoneNumber(forBPM: Double($0)) } ?? 0 }
@@ -31,6 +34,11 @@ struct ZonesView: View {
                         .font(StrandFont.footnote).foregroundStyle(StrandPalette.textSecondary)
                 }
                 .frame(maxWidth: .infinity)
+            }
+            NoopButton(running ? "Stop" : "Start live heart rate", systemImage: running ? "stop.fill" : "play.fill",
+                       kind: running ? .secondary : .primary, fullWidth: true) {
+                running.toggle()
+                setRealtime(running && visible && scenePhase == .active)
             }
             NoopCard { HRZoneSection(zone: zone, zoneSet: zoneSet) }
             NoopCard {
@@ -56,10 +64,10 @@ struct ZonesView: View {
         // The strap only streams per-second heart rate while a screen asks for it; without this the big number
         // stayed "--" and no zone lit. Released when the tab is left or the app goes to the background (a
         // background transition fires no onDisappear), so the stream never runs unseen.
-        .onAppear { visible = true; setRealtime(scenePhase == .active) }
-        .onDisappear { visible = false; setRealtime(false) }
+        .onAppear { visible = true }
+        .onDisappear { visible = false; running = false; setRealtime(false) }
         // A tab that is not showing stays alive in the TabView and still sees scene changes, hence `visible`.
-        .onChangeCompat(of: scenePhase == .active) { active in setRealtime(active && visible) }
+        .onChangeCompat(of: scenePhase == .active) { active in setRealtime(active && visible && running) }
         .onChangeCompat(of: live.bonded) { _ in model.rearmRealtimeIfWanted() }
         .onChangeCompat(of: live.connected) { _ in model.rearmRealtimeIfWanted() }
     }
