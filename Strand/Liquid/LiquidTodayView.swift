@@ -755,8 +755,10 @@ struct LiquidTodayView: View {
                     // Isolated leaf: it observes LiveState so the ~1 Hz HR notifies re-render ONLY
                     // this card, never the whole Today. Shows the current bpm live with a rolling
                     // beat-by-beat trace; falls back to today's banked 5-minute trace when idle.
+                    // Fork: static line (redrawn when the ~1 Hz HR lands), no 60 fps glint: that Canvas
+                    // re-rasterises on the CPU every frame, the cost that made Sleep's hero gauge lag.
                     LiquidLiveHR(tint: liquidHeart, fallback: hrValues, fallbackSegments: hrSegments,
-                                 animated: dataLoaded)
+                                 animated: false)
                 }
             }
             .buttonStyle(LiquidPressStyle())
