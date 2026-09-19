@@ -461,15 +461,21 @@ struct LabBookView: View {
     // MARK: - Load / save / delete (through the shared on-device store)
 
     private func load() async {
-        guard let store = await repo.storeHandle() else { return }
+        guard let all = await LabBookView.loadAll(repo) else { return }
+        markers = all
+        loaded = true
+    }
+
+    /// Every reading for the active strap, oldest first; nil while the store isn't open. Shared with Biology.
+    static func loadAll(_ repo: Repository) async -> [LabMarkerRow]? {
+        guard let store = await repo.storeHandle() else { return nil }
         // Read by category so we cover them all; markers are stored under the strap device id.
         var all: [LabMarkerRow] = []
         for category in LabMarkerCategory.allCases {
             let rows = (try? await store.labMarkers(deviceId: repo.deviceId, category: category.rawValue)) ?? []
             all.append(contentsOf: rows)
         }
-        markers = all.sorted { $0.takenAt < $1.takenAt }
-        loaded = true
+        return all.sorted { $0.takenAt < $1.takenAt }
     }
 
     private func save(_ drafts: [LabMarkerRow]) async {
@@ -580,10 +586,22 @@ enum LabBookFormat {
 
 // MARK: - Marker detail (history + trend + "compare with a signal")
 
-private struct MarkerDetailView: View {
+struct MarkerDetailView: View {
     let markerKey: String
     let readings: [LabMarkerRow]
+    /// Fork (Biology): a title for custom markers (the report's own name) and a chart shown above the trend.
+    var title: String? = nil
+    var chart: AnyView? = nil
     let onDelete: (_ id: String) async -> Void
+
+    init(markerKey: String, readings: [LabMarkerRow], title: String? = nil, chart: AnyView? = nil,
+         onDelete: @escaping (_ id: String) async -> Void) {
+        self.markerKey = markerKey
+        self.readings = readings
+        self.title = title
+        self.chart = chart
+        self.onDelete = onDelete
+    }
 
     @EnvironmentObject var repo: Repository
     @Environment(\.dismiss) private var dismiss
@@ -598,7 +616,7 @@ private struct MarkerDetailView: View {
     @State private var computing = false
 
     private var displayName: String {
-        MarkerCatalog.definition(for: markerKey)?.displayName ?? LabBookView.humanise(markerKey)
+        title ?? MarkerCatalog.definition(for: markerKey)?.displayName ?? LabBookView.humanise(markerKey)
     }
     private var unit: String { readings.last?.unit ?? MarkerCatalog.definition(for: markerKey)?.canonicalUnit ?? "" }
     private var numericReadings: [LabMarkerRow] { readings.filter { $0.value != nil } }
@@ -614,6 +632,7 @@ private struct MarkerDetailView: View {
                        // materialise its whole list before the trend chart is on screen.
                        lazy: true) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+                if let chart { chart }
                 trendSection
                 if !numericReadings.isEmpty { compareSection }
                 historySection

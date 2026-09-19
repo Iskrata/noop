@@ -462,6 +462,11 @@ struct RootTabView: View {
             ScreenScaffold(title: "More", subtitle: "Everything else, one tap away",
                            onRefresh: { await repo.refresh() },
                            topBackground: liquidScaffoldSky()) {
+                // Fork: Biology (bloodwork) sits on its own at the top of More rather than taking a tab.
+                NoopCard(padding: 0) {
+                    MoreRow("Biology", "drop.fill", .biology)
+                        .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
+                }
                 moreSection("Insights") {
                     MoreRow("What Moves You", "wand.and.sparkles", .insightsHub)
                     MoreRow("Intelligence", "brain.head.profile", .intelligence)
@@ -600,7 +605,7 @@ private enum MoreDestination: Hashable {
     case insightsHub, intelligence, insights, explore, compare, sleep
     case live, workouts, liftLog, health, labBook, stress, breathe, intervals, rhythm, sleepSchedule
     case fusedRecord, appleHealth, miBand, dataSources, backupSync, shortcutsExport, noopLimitations
-    case alarms, automations, testCentre, siriShortcuts, powerSaving, settings
+    case alarms, automations, testCentre, siriShortcuts, powerSaving, settings, biology
 
     @ViewBuilder var destination: some View {
         switch self {
@@ -633,6 +638,7 @@ private enum MoreDestination: Hashable {
         case .siriShortcuts:   SiriShortcutsSettingsView()
         case .powerSaving:     PowerSavingView()
         case .settings:        SettingsView()
+        case .biology:         BiologyView()
         }
     }
 }

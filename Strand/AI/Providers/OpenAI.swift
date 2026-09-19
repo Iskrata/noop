@@ -45,11 +45,7 @@ struct OpenAIClient: AIProviderClient {
         body["temperature"] = 0.6
         body["max_tokens"] = 4096
 
-        var req = URLRequest(url: AIProvider.openAI.endpoint)
-        req.httpMethod = "POST"
-        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let req = try request(body, key: key)
 
         try await performStreamingRequest(req, session: session) { payload in
             if let delta = SseDeltas.openAiDelta(payload) {
@@ -75,7 +71,63 @@ struct OpenAIClient: AIProviderClient {
         }
     }
 
+    /// Fork: one structured-output vision call — `prompt` plus JPEG page images, the reply constrained to
+    /// `schema` (OpenAI `json_schema`, strict). Returns the reply's JSON text. Used by the lab-report scan;
+    /// modern params only (every vision-capable model accepts `max_completion_tokens`), a long timeout because
+    /// a multi-page report can take a minute or more.
+    func extractJSON(
+        key: String,
+        model: String,
+        systemPrompt: String,
+        prompt: String,
+        jpegImages: [Data],
+        schemaName: String,
+        schema: [String: Any],
+        session: URLSession
+    ) async throws -> String {
+        var content: [[String: Any]] = [["type": "text", "text": prompt]]
+        for jpeg in jpegImages {
+            content.append(["type": "image_url",
+                            "image_url": ["url": "data:image/jpeg;base64,\(jpeg.base64EncodedString())", "detail": "high"]])
+        }
+        let body: [String: Any] = [
+            "model": model,
+            "messages": [["role": "system", "content": systemPrompt], ["role": "user", "content": content]],
+            "max_completion_tokens": 16384,
+            "response_format": ["type": "json_schema",
+                                "json_schema": ["name": schemaName, "strict": true, "schema": schema]],
+        ]
+        var req = try request(body, key: key)
+        req.timeoutInterval = 240
+        let json = try await performRequest(req, session: session)
+        if let refusal = firstMessage(json)?["refusal"] as? String, !refusal.isEmpty {
+            throw AICoachError.emptyReply("The model declined: \(refusal)")
+        }
+        guard let text = replyText(json) else { throw emptyReplyError(json) }
+        return text
+    }
+
     // MARK: Private
+
+    private func request(_ body: [String: Any], key: String) throws -> URLRequest {
+        var req = URLRequest(url: AIProvider.openAI.endpoint)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return req
+    }
+
+    private func firstMessage(_ json: [String: Any]) -> [String: Any]? {
+        ((json["choices"] as? [[String: Any]])?.first)?["message"] as? [String: Any]
+    }
+
+    /// The first choice's trimmed, non-empty text, or nil.
+    private func replyText(_ json: [String: Any]) -> String? {
+        guard let content = (firstMessage(json)?["content"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty else { return nil }
+        return content
+    }
 
     /// `modernParams`: use `max_completion_tokens`, drop `temperature` — required by reasoning models.
     private func chat(
@@ -95,18 +147,8 @@ struct OpenAIClient: AIProviderClient {
             body["max_tokens"] = 4096
         }
 
-        var req = URLRequest(url: AIProvider.openAI.endpoint)
-        req.httpMethod = "POST"
-        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let json = try await performRequest(req, session: session)
-        guard let choices = json["choices"] as? [[String: Any]],
-              let first = choices.first,
-              let message = first["message"] as? [String: Any],
-              let content = (message["content"] as? String)?
-                  .trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty else {
+        let json = try await performRequest(try request(body, key: key), session: session)
+        guard let content = replyText(json) else {
             throw emptyReplyError(json)   // #1074: surface the provider's real error if the 200 body has one
         }
         return content

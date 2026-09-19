@@ -254,7 +254,7 @@ final class AICoachEngine: ObservableObject {
     }
 
     private let repo: Repository
-    private let session: URLSession
+    let session: URLSession
 
     private static let providerKey = "ai.provider"
     private static let modelKey = "ai.model"
@@ -414,7 +414,7 @@ final class AICoachEngine: ObservableObject {
 
     /// The key to send with a request: the stored key, or an empty string for the keyless Custom
     /// provider. `nil` means "not configured", the caller surfaces `.noKey`.
-    private var resolvedKey: String? {
+    var resolvedKey: String? {
         if let k = AIKeyStore.read() {
             // Only send the stored key to the provider it was SAVED for, never Bearer one provider's
             // key (e.g. a cloud OpenAI/Anthropic secret) to another provider's endpoint, above all the
