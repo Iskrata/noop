@@ -91,10 +91,11 @@ final class EditMergePrecedenceTests: XCTestCase {
     func testSleepPerformanceDailyColumnDerivesRestFromTotals() {
         let d = full(day: "2026-06-12", totalSleepMin: 480, deepMin: 90, remMin: 110,
                      lightMin: 280, efficiency: 0.92, recovery: 80, strain: 9.0)
-        // Matches IntelligenceEngine's persisted sleep_performance projection (same composite).
-        let expected = AnalyticsEngine.Rest.composite(daily: d)
+        // Matches IntelligenceEngine's persisted sleep_performance projection (same composite; the fork's
+        // WHOOP-fitted `PersonalSleepScore`).
+        let expected = PersonalSleepScore.composite(d)
         XCTAssertNotNil(expected)
-        XCTAssertEqual(Repository.dailyColumn(key: "sleep_performance", day: d), expected)
+        XCTAssertEqual(Repository.dailyColumn(key: "sleep_performance", day: d) ?? -1, expected ?? 0, accuracy: 0.001)
     }
 
     /// No banked night (totalSleepMin nil) → no Rest to derive; the resolver leaves the day empty

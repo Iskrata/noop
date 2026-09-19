@@ -959,7 +959,11 @@ final class IntelligenceEngine: ObservableObject {
         let sleepConsistency = VitalityEngine.sleepConsistency(nightlyHours: Array(nightlyHours.suffix(28)))
         let sleepNeedHours = AnalyticsEngine.Rest.personalizedNeedHours(nightlyHours: nightlyHours,
                                                                         age: profile.age)
-        PersonalSleepScore.publish(needHours: sleepNeedHours, consistency: sleepConsistency)
+        PersonalSleepScore.publish(
+            needHours: sleepNeedHours,
+            consistencyByDay: await Self.sleepConsistencyByWakeDay(
+                store: store, importedId: deviceId, computedId: deviceId + "-noop",
+                from: nowLocalMidnight - (maxDays + 4) * 86_400, to: now, offsetSec: tzOffset))
 
         // ── FIX 1 (main-actor jank): run the ENTIRE per-day enumeration OFF the main actor ───────────
         // Every `await store.…` read inside this loop has its continuation RESUME on the main actor
