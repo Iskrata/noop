@@ -21,7 +21,7 @@ extension WhoopStore {
     /// with no breathing term (deep/REM 11.5/15.3 % vs WHOOP's 19.8/28.7 %) and have no HRV or Charge.
     /// A window that has a labelled transport still reads only that transport. Mutable only so the
     /// upstream policy tests can pin the strict behaviour; nothing in the app writes it.
-    nonisolated(unsafe) static var scoresUnlabelledWhoop5Legacy = true
+    nonisolated(unsafe) public static var scoresUnlabelledWhoop5Legacy = true
 
     /// The earliest beat this device has banked that the unit policy can actually score, or nil when it
     /// has none at all.

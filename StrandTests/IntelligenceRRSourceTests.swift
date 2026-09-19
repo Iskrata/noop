@@ -7,6 +7,11 @@ import StrandAnalytics
 
 @MainActor
 final class IntelligenceRRSourceTests: XCTestCase {
+    // These pin upstream's strict WHOOP 5 R-R policy; the fork's legacy fallback
+    // (`WhoopStore.scoresUnlabelledWhoop5Legacy`) is pinned in Whoop5RRStoreTests.
+    override func setUp() { super.setUp(); WhoopStore.scoresUnlabelledWhoop5Legacy = false }
+    override func tearDown() { WhoopStore.scoresUnlabelledWhoop5Legacy = true; super.tearDown() }
+
     private let canonical = "my-whoop"
     private let active = "new-five"
 

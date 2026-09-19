@@ -500,6 +500,8 @@ final class AppModel: ObservableObject {
                                                                flagKey: IntelligenceEngine.legacyRRChargeRescoreFlagKey) {
                 UserDefaults.standard.set(true, forKey: IntelligenceEngine.healthHistoryRewriteOwedKey)
             }
+            _ = await self.intelligence.runEffortRescoreIfNeeded(historyDays: historyDays,
+                                                                 flagKey: IntelligenceEngine.personalSleepScoreRescoreFlagKey)
             while !Task.isCancelled {
                 // #547 RE-POLLUTION: a sync since the last tick may have armed a re-heal (its ingest gate
                 // dropped bad-clock records). `runTimestampHealIfNeeded` honours the pending flag even after

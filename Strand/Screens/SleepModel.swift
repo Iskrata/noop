@@ -423,7 +423,7 @@ extension SleepModel {
         let imported = importedSleep
         return metric(days: days) { d in
             if let p = imported[d.day]?.performancePct { return p }   // export-verbatim
-            return AnalyticsEngine.Rest.composite(daily: d)            // real resolved Rest composite
+            return PersonalSleepScore.composite(d)            // real resolved Rest composite
         }
     }
 

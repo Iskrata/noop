@@ -39,7 +39,7 @@ enum KeyMetric: String, CaseIterable, Identifiable {
         switch self {
         case .charge:      return String(localized: "Charge")
         case .effort:      return String(localized: "Effort")
-        case .rest:        return String(localized: "Rest")
+        case .rest:        return String(localized: "Sleep")
         case .hrv:         return "HRV"
         case .restingHr:   return String(localized: "Resting HR")
         case .bloodOxygen: return String(localized: "Blood Oxygen")

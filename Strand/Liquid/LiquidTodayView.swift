@@ -699,7 +699,7 @@ struct LiquidTodayView: View {
                               decimals: effortScale == .whoop ? 1 : 0,
                               detailRoute: .metric(HeroRingMetric.effort),
                               target: effortTargetBand)
-                HeroScoreCell(label: String(localized: "Rest"), score: restScore, tint: StrandPalette.restColor,
+                HeroScoreCell(label: String(localized: "Sleep"), score: restScore, tint: StrandPalette.restColor,
                               // Fork: the Sleep screen itself (it left the tab bar), not the Rest metric page.
                               detailRoute: .sleep)
                     .overlay(alignment: .top) {

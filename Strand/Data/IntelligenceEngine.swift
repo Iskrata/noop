@@ -597,6 +597,10 @@ final class IntelligenceEngine: ObservableObject {
     /// (b) moves Charge onto the fork's WHOOP-fitted `RecoveryScorer` constants.
     static let legacyRRChargeRescoreFlagKey = "intelligence.legacyRRChargeRescore.v1.done"
 
+    /// One-shot full-history rescore so every stored Sleep score moves onto the personal need and
+    /// consistency (`PersonalSleepScore`). Sleep scores never reach Apple Health, so no rewrite is owed.
+    static let personalSleepScoreRescoreFlagKey = "intelligence.personalSleepScoreRescore.v1.done"
+
     /// Set once a full-history rescore completes; the Apple Health write-back then reaches back to the first
     /// computed night once, so nights older than its rolling window are replaced too, and clears it.
     static let healthHistoryRewriteOwedKey = "noop.health.historyRewriteOwed.v1"
@@ -955,6 +959,7 @@ final class IntelligenceEngine: ObservableObject {
         let sleepConsistency = VitalityEngine.sleepConsistency(nightlyHours: Array(nightlyHours.suffix(28)))
         let sleepNeedHours = AnalyticsEngine.Rest.personalizedNeedHours(nightlyHours: nightlyHours,
                                                                         age: profile.age)
+        PersonalSleepScore.publish(needHours: sleepNeedHours, consistency: sleepConsistency)
 
         // ── FIX 1 (main-actor jank): run the ENTIRE per-day enumeration OFF the main actor ───────────
         // Every `await store.…` read inside this loop has its continuation RESUME on the main actor
@@ -2248,7 +2253,7 @@ final class IntelligenceEngine: ObservableObject {
             // same `night.nightlySkin` the line above takes the deviation from — so the two can never
             // describe different nights, and no second derivation exists to drift.
             dailies.append(daily)
-            if let rest = AnalyticsEngine.Rest.composite(daily: daily) {
+            if let rest = PersonalSleepScore.composite(daily) {
                 restPoints.append(MetricPoint(day: daily.day, key: "sleep_performance", value: rest))
             }
             if let onset = physiologicalSteps.onsetByWakeDay[daily.day] {
@@ -2413,7 +2418,7 @@ final class IntelligenceEngine: ObservableObject {
                 dailies.append(scored)
                 importScoredDays.insert(w.day)
                 resolvedScoreOwnerByDay[w.day] = source
-                if let rest = AnalyticsEngine.Rest.composite(daily: scored) {
+                if let rest = PersonalSleepScore.composite(scored) {
                     restPoints.append(MetricPoint(day: w.day, key: "sleep_performance", value: rest))
                 }
                 out.append(Computed(day: w.day, recovery: recovery, strain: scored.strain,

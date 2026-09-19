@@ -77,7 +77,7 @@ struct InsightsView: View {
             switch self {
             case .recovery: return String(localized: "Charge")
             case .hrv:      return "HRV"
-            case .sleep:    return String(localized: "Rest")
+            case .sleep:    return String(localized: "Sleep")
             case .rhr:      return "RHR"
             }
         }
@@ -95,7 +95,7 @@ struct InsightsView: View {
             switch self {
             case .recovery: return String(localized: "Charge")
             case .hrv:      return "HRV"
-            case .sleep:    return String(localized: "Rest")
+            case .sleep:    return String(localized: "Sleep")
             case .rhr:      return String(localized: "Resting HR")
             }
         }

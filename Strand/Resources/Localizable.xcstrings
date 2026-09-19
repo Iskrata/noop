@@ -127379,12 +127379,6 @@
             "value": "RUHE"
           }
         },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "SLEEP"
-          }
-        },
         "es": {
           "stringUnit": {
             "state": "translated",
@@ -135990,7 +135984,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sleep"
+            "value": "Rest"
           }
         },
         "es": {

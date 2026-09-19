@@ -102,7 +102,7 @@ struct CoupledView: View {
     private var sleepPerformance: Double? {
         guard let d = day else { return nil }
         if let p = repo.importedSleep[d.day]?.performancePct { return p }
-        return AnalyticsEngine.Rest.composite(daily: d)
+        return PersonalSleepScore.composite(d)
     }
 
     /// On-device readiness, computed EXACTLY as Today does (ReadinessEngine.evaluate over the same rows,

@@ -5,6 +5,11 @@ import StrandAnalytics
 @testable import Strand
 
 final class RawPhysiologyUnionTests: XCTestCase {
+    // These pin upstream's strict WHOOP 5 R-R policy; the fork's legacy fallback
+    // (`WhoopStore.scoresUnlabelledWhoop5Legacy`) is pinned in Whoop5RRStoreTests.
+    override func setUp() { super.setUp(); WhoopStore.scoresUnlabelledWhoop5Legacy = false }
+    override func tearDown() { WhoopStore.scoresUnlabelledWhoop5Legacy = true; super.tearDown() }
+
     func testRRMergePreservesDistinctSameTimestampBeatsAndDedupesExactIdentityActiveFirst() {
         let active = [RRInterval(ts: 100, rrMs: 800, ord: 8, seq: 0),
                       RRInterval(ts: 100, rrMs: 800, ord: 9, seq: 1)]
