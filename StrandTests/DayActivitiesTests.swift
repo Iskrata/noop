@@ -61,4 +61,26 @@ final class DayActivitiesTests: XCTestCase {
                                        hr: [], scoring: scoring)
         XCTAssertEqual(rows.first?.effort, 42)
     }
+
+    func testDetectedBoutsBelowHalfAStrainAreDropped() {
+        // A 15-min bout barely above resting earns almost no Effort; an unscorable bout (no HR) has none.
+        let light = DetectedWorkout(startSec: 1_000, endSec: 1_900, avgBpm: 62, peakBpm: 62, durationMin: 15)
+        let blind = DetectedWorkout(startSec: 5_000, endSec: 5_900, avgBpm: 120, peakBpm: 120, durationMin: 15)
+        let rows = DayActivities.build(sleeps: [], workouts: [], detected: [light, blind],
+                                       hr: hr(1_000, 1_900, bpm: 62), scoring: scoring)
+        XCTAssertTrue(rows.isEmpty)
+    }
+
+    func testDetectedBoutIsNamedByTheStrapsGait() throws {
+        let bout = DetectedWorkout(startSec: 0, endSec: 900, avgBpm: 150, peakBpm: 150, durationMin: 15)
+        let walking = (0...900).map { StepSample(ts: $0, counter: $0, activityClass: 1) }
+        let rows = DayActivities.build(sleeps: [], workouts: [], detected: [bout], hr: hr(0, 900, bpm: 150),
+                                       steps: walking, scoring: scoring)
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(row.effort), DayActivities.minDetectedEffort)
+        XCTAssertEqual(row.kind, .detected(bout, gait: .walk))
+        let noSteps = DayActivities.build(sleeps: [], workouts: [], detected: [bout], hr: hr(0, 900, bpm: 150),
+                                          scoring: scoring)
+        XCTAssertEqual(noSteps.first?.kind, .detected(bout, gait: nil))
+    }
 }

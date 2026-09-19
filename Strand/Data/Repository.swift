@@ -1294,6 +1294,18 @@ final class Repository: ObservableObject {
         return nil
     }
 
+    /// Fork: the strap's step records over `[from, to]` from the FIRST id that has any (active strap first,
+    /// never merged across ids, same rule as `strapStepTicks`). Feeds `StepGait` for the Today Activities
+    /// list; [] on a WHOOP 4.0 or a window not yet offloaded.
+    func strapStepSamples(from: Int, to: Int) async -> [StepSample] {
+        guard let store = await ensureStore() else { return [] }
+        for id in importedReadIds {
+            let samples = (try? await store.stepSamples(deviceId: id, from: from, to: to, limit: 200_000)) ?? []
+            if !samples.isEmpty { return samples }
+        }
+        return []
+    }
+
     /// Pure pick of the latest classed activity across the union's per-id step lists: the non-nil
     /// `activityClass` on the sample with the greatest ts, resolving a ts tie in favour of the FIRST list (the
     /// active strap, mirroring the union's active-wins rule). Static + pure so it's unit-testable without a

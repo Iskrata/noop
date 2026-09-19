@@ -42,7 +42,7 @@ struct DayActivitiesSection: View {
     /// The row whose detail drawer is open.
     @State private var selected: DayActivity?
     /// The detected bout being saved through the manual-workout sheet, so its sport can be picked.
-    @State private var savingDetected: DetectedWorkout?
+    @State private var savingDetected: IdentifiedBout?
 
     private var effortScale: EffortScale { UnitPrefs.resolveEffortScale(effortScaleRaw) }
 
@@ -77,18 +77,17 @@ struct DayActivitiesSection: View {
                                     // After the drawer's dismissal settles, so the two sheets don't collide.
                                     { Task { @MainActor in
                                         try? await Task.sleep(nanoseconds: 450_000_000)
-                                        savingDetected = bout
+                                        savingDetected = IdentifiedBout(bout: bout, gait: detectedGait(activity))
                                     } }
                                 },
                                 onDismissBout: detectedBout(activity).map { bout in { dismiss(bout) } })
                 .environmentObject(repo)
                 .presentationDetents([.medium, .large])
         }
-        .sheet(item: Binding(get: { savingDetected.map(IdentifiedBout.init) },
-                             set: { if $0 == nil { savingDetected = nil } })) { item in
-            // The manual sheet's sport field (with its catalogue suggestions) names the bout; the bout only
-            // seeds the span and average HR. `replacing` is ignored: the seed row was never stored.
-            ManualWorkoutSheet(editing: Self.seedRow(item.bout)) { row, _ in
+        .sheet(item: $savingDetected) { item in
+            // The manual sheet's sport field (with its catalogue suggestions) names the bout; the bout seeds
+            // the span, average HR and, when the strap's gait says walk/run, the sport. `replacing` is ignored: the seed row was never stored.
+            ManualWorkoutSheet(editing: Self.seedRow(item.bout, gait: item.gait)) { row, _ in
                 Task {
                     await repo.saveManualWorkout(row)
                     await repo.refresh()
@@ -99,12 +98,23 @@ struct DayActivitiesSection: View {
 
     private struct IdentifiedBout: Identifiable {
         let bout: DetectedWorkout
+        let gait: CoarseWorkoutClass?
         var id: String { "\(bout.startSec):\(bout.endSec)" }
     }
 
-    /// An unsaved row carrying the bout's span and average HR, with an empty sport for the sheet to fill.
-    private static func seedRow(_ bout: DetectedWorkout) -> WorkoutRow {
-        WorkoutRow(startTs: bout.startSec, endTs: bout.endSec, sport: "", source: "", durationS: nil,
+    /// The catalogue sport a bout's step gait names (`WorkoutCatalog`), nil when it isn't on foot.
+    private static func gaitSport(_ gait: CoarseWorkoutClass?) -> String? {
+        switch gait {
+        case .walk: return "Walking"
+        case .run: return "Running"
+        default: return nil
+        }
+    }
+
+    /// An unsaved row carrying the bout's span and average HR, with the gait's sport (or an empty one) for
+    /// the sheet to confirm or fill.
+    private static func seedRow(_ bout: DetectedWorkout, gait: CoarseWorkoutClass?) -> WorkoutRow {
+        WorkoutRow(startTs: bout.startSec, endTs: bout.endSec, sport: gaitSport(gait) ?? "", source: "", durationS: nil,
                    energyKcal: nil, avgHr: bout.avgBpm, maxHr: nil, strain: nil, distanceM: nil,
                    zonesJSON: nil, notes: nil, steps: nil)
     }
@@ -123,38 +133,35 @@ struct DayActivitiesSection: View {
             NavigationLink(value: TabRoute.sleep) {
                 rowBody(icon: "moon.fill", tint: StrandPalette.restColor, title: String(localized: "Sleep"),
                         subtitle: timeRange(activity), badge: nil,
-                        value: sleepValue(night), frac: nil)
+                        value: sleepValue(night))
             }
             .buttonStyle(.plain)
         case .workout(let w):
             Button { selected = activity } label: {
                 rowBody(icon: sportSymbol(w.sport), tint: StrandPalette.effortColor,
                         title: WorkoutSource.displaySport(w.sport), subtitle: timeRange(activity), badge: nil,
-                        value: effortValue(activity, fallbackKcal: w.energyKcal, fallbackHr: w.avgHr),
-                        frac: activity.effort.map { $0 / 100 })
+                        value: effortValue(activity, fallbackKcal: w.energyKcal, fallbackHr: w.avgHr))
             }
             .buttonStyle(.plain)
-        case .detected(let bout):
+        case .detected(let bout, let gait):
             Button { selected = activity } label: {
-                rowBody(icon: "figure.run", tint: StrandPalette.effortColor, title: String(localized: "Activity"),
-                        subtitle: timeRange(activity), badge: String(localized: "AUTO"),
-                        value: effortValue(activity, fallbackKcal: nil, fallbackHr: bout.avgBpm),
-                        frac: activity.effort.map { $0 / 100 })
+                rowBody(icon: gait == .walk ? "figure.walk" : "figure.run", tint: StrandPalette.effortColor,
+                        title: title(activity), subtitle: timeRange(activity), badge: String(localized: "AUTO"),
+                        value: effortValue(activity, fallbackKcal: nil, fallbackHr: bout.avgBpm))
             }
             .buttonStyle(.plain)
         case .mindful:
             Button { selected = activity } label: {
                 rowBody(icon: "brain.head.profile", tint: StrandPalette.metricCyan, title: title(activity),
                         subtitle: timeRange(activity), badge: nil,
-                        value: (String(max(1, (activity.endTs - activity.startTs) / 60)), String(localized: "MIN")),
-                        frac: nil)
+                        value: (String(max(1, (activity.endTs - activity.startTs) / 60)), String(localized: "MIN")))
             }
             .buttonStyle(.plain)
         }
     }
 
     private func rowBody(icon: String, tint: Color, title: String, subtitle: String, badge: String?,
-                         value: (main: String, caption: String), frac: Double?) -> some View {
+                         value: (main: String, caption: String)) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 15, weight: .semibold))
@@ -173,10 +180,6 @@ struct DayActivitiesSection: View {
                     }
                 }
                 Text(subtitle).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-                if let frac, !scoresHidden {
-                    LiquidTube(frac: max(0, min(1, frac)), tint: tint, height: 6, animated: false)
-                        .padding(.top, 2)
-                }
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
@@ -244,6 +247,7 @@ struct DayActivitiesSection: View {
         if blocks.isEmpty { blocks = await repo.computedSleepSessions(from: from - 18 * 3600, to: to) }
         let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
         let detected = await repo.detectedActivities(from: from, to: to, hr: hr)
+        let steps = detected.isEmpty ? [] : await repo.strapStepSamples(from: from, to: to)
         let mindful = await DayActivities.mindfulSessions?(from, to) ?? []
         let scoring = DayActivities.Scoring(
             maxHR: profile.age > 0 ? StrainScorer.tanakaHRmax(age: Double(profile.age)) : nil,
@@ -251,7 +255,8 @@ struct DayActivitiesSection: View {
             method: PuffinExperiment.effortMethod, sex: profile.sex)
         let built = DayActivities.build(
             sleeps: DayActivities.sleepsEnding(in: blocks, from: from, to: to),
-            workouts: workouts, detected: detected, mindful: mindful, hr: hr, scoring: scoring)
+            workouts: workouts, detected: detected, mindful: mindful, hr: hr, steps: steps,
+            scoring: scoring)
         guard !Task.isCancelled else { return }
         activities = built
     }
@@ -260,13 +265,22 @@ struct DayActivitiesSection: View {
         switch a.kind {
         case .sleep: return String(localized: "Sleep")
         case .workout(let w): return WorkoutSource.displaySport(w.sport)
-        case .detected: return String(localized: "Activity")
+        case .detected(_, let gait):
+            switch gait {
+            case .walk: return String(localized: "Walk")
+            case .run: return String(localized: "Run")
+            default: return String(localized: "Activity")
+            }
         case .mindful: return String(localized: "Mindfulness")
         }
     }
 
     private func detectedBout(_ a: DayActivity) -> DetectedWorkout? {
-        if case .detected(let d) = a.kind { return d } else { return nil }
+        if case .detected(let d, _) = a.kind { return d } else { return nil }
+    }
+
+    private func detectedGait(_ a: DayActivity) -> CoarseWorkoutClass? {
+        if case .detected(_, let gait) = a.kind { return gait } else { return nil }
     }
 
     private func detailEffort(_ a: DayActivity) -> String? {
@@ -276,6 +290,6 @@ struct DayActivitiesSection: View {
 
     private func dismiss(_ bout: DetectedWorkout) {
         repo.dismissDetectedSuggestion(bout)
-        activities.removeAll { if case .detected(let d) = $0.kind { return d == bout } else { return false } }
+        activities.removeAll { if case .detected(let d, _) = $0.kind { return d == bout } else { return false } }
     }
 }

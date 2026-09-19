@@ -16,8 +16,9 @@ struct DayActivity: Identifiable, Equatable {
     enum Kind: Equatable {
         case sleep(CachedSleepSession)
         case workout(WorkoutRow)
-        /// A detector bout that isn't saved as a workout (and wasn't dismissed).
-        case detected(DetectedWorkout)
+        /// A detector bout that isn't saved as a workout (and wasn't dismissed), with the gait the strap's
+        /// own step ticks name it by (`StepGait`: walk / run), nil when it isn't clearly on foot.
+        case detected(DetectedWorkout, gait: CoarseWorkoutClass?)
         /// An Apple Health mindful session (meditation, breathing).
         case mindful
     }
@@ -50,11 +51,17 @@ enum DayActivities {
         let sex: String
     }
 
+    /// Auto-detected bouts under 0.5 WHOOP strain are left out: too light to be worth a row. The same line
+    /// on NOOP's native 0–100 Effort axis, whichever scale the user displays.
+    static let minDetectedEffort = 0.5 / UnitFormatter.effortScaleFactor
+
     /// Merge sleep blocks, saved workouts, detector bouts and mindful sessions into one list, newest first
     /// (WHOOP's order), scoring each workout and bout over its own slice of `hr` (time-ordered, covering the
-    /// day window).
+    /// day window). Bouts below `minDetectedEffort` (or unscorable) are dropped; the rest are named from
+    /// `steps` (the strap's step records over the day window).
     static func build(sleeps: [CachedSleepSession], workouts: [WorkoutRow], detected: [DetectedWorkout],
-                      mindful: [ClosedRange<Int>] = [], hr: [HRSample], scoring: Scoring) -> [DayActivity] {
+                      mindful: [ClosedRange<Int>] = [], hr: [HRSample], steps: [StepSample] = [],
+                      scoring: Scoring) -> [DayActivity] {
         func effort(_ start: Int, _ end: Int, fallback: Double?) -> Double? {
             StrainScorer.strain(hrSlice(hr, from: start, to: end), maxHR: scoring.maxHR,
                                 restingHR: scoring.restingHR, method: scoring.method, sex: scoring.sex) ?? fallback
@@ -67,8 +74,9 @@ enum DayActivities {
                                     effort: effort(w.startTs, w.endTs, fallback: w.strain)))
         }
         for d in detected {
-            rows.append(DayActivity(kind: .detected(d), startTs: d.startSec, endTs: d.endSec,
-                                    effort: effort(d.startSec, d.endSec, fallback: nil)))
+            guard let e = effort(d.startSec, d.endSec, fallback: nil), e >= minDetectedEffort else { continue }
+            let gait = StepGait.classify(steps, start: d.startSec, end: d.endSec)
+            rows.append(DayActivity(kind: .detected(d, gait: gait), startTs: d.startSec, endTs: d.endSec, effort: e))
         }
         for m in mindful {
             rows.append(DayActivity(kind: .mindful, startTs: m.lowerBound, endTs: m.upperBound, effort: nil))
