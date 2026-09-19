@@ -208,6 +208,14 @@
       "identity_sha256": "479a15d4f55eb6de209bcaec93dd2cb09abfb67b81c6e810782647b92a416351",
       "platform": "kotlin",
       "rationale": "Twin of the Swift WhoopImporter.repairAbsoluteSkinTempIfNeeded, which lives in the app layer (Strand/Data/WhoopImporter.swift) outside the governed Swift roots, so the ledger cannot pair them."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HealthConnectWriter.kt::dailyCutoff/2#1",
+      "identity_sha256": "6cb9a3a0755edb5e1621625ad35ea8c20de9b9542c1c746743915b0b77f1bcb1",
+      "platform": "kotlin",
+      "rationale": "Health Connect export window only; the iOS side of the same one-time rewrite lives in StrandiOS/Health/HealthKitBridge.swift (rewriteRestingHR), outside the governed roots."
     }
   ]
 }
