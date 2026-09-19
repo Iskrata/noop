@@ -43,8 +43,6 @@ struct DayActivitiesSection: View {
     @State private var selected: DayActivity?
     /// The detected bout being saved through the manual-workout sheet, so its sport can be picked.
     @State private var savingDetected: DetectedWorkout?
-    /// Sport suggestions for detected bouts, keyed by activity id (`SportGuesser`).
-    @State private var guesses: [String: SportGuesser.Guess] = [:]
 
     private var effortScale: EffortScale { UnitPrefs.resolveEffortScale(effortScaleRaw) }
 
@@ -90,8 +88,7 @@ struct DayActivitiesSection: View {
                              set: { if $0 == nil { savingDetected = nil } })) { item in
             // The manual sheet's sport field (with its catalogue suggestions) names the bout; the bout only
             // seeds the span and average HR. `replacing` is ignored: the seed row was never stored.
-            ManualWorkoutSheet(editing: Self.seedRow(item.bout,
-                                                     sport: guesses["detected-\(item.bout.startSec)-\(item.bout.endSec)"]?.sport ?? "")) { row, _ in
+            ManualWorkoutSheet(editing: Self.seedRow(item.bout)) { row, _ in
                 Task {
                     await repo.saveManualWorkout(row)
                     await repo.refresh()
@@ -105,10 +102,9 @@ struct DayActivitiesSection: View {
         var id: String { "\(bout.startSec):\(bout.endSec)" }
     }
 
-    /// An unsaved row carrying the bout's span and average HR, with the suggested sport (or empty) for the
-    /// sheet to confirm or change.
-    private static func seedRow(_ bout: DetectedWorkout, sport: String) -> WorkoutRow {
-        WorkoutRow(startTs: bout.startSec, endTs: bout.endSec, sport: sport, source: "", durationS: nil,
+    /// An unsaved row carrying the bout's span and average HR, with an empty sport for the sheet to fill.
+    private static func seedRow(_ bout: DetectedWorkout) -> WorkoutRow {
+        WorkoutRow(startTs: bout.startSec, endTs: bout.endSec, sport: "", source: "", durationS: nil,
                    energyKcal: nil, avgHr: bout.avgBpm, maxHr: nil, strain: nil, distanceM: nil,
                    zonesJSON: nil, notes: nil, steps: nil)
     }
@@ -140,8 +136,7 @@ struct DayActivitiesSection: View {
             .buttonStyle(.plain)
         case .detected(let bout):
             Button { selected = activity } label: {
-                rowBody(icon: guesses[activity.id].map { sportSymbol($0.sport) } ?? "figure.run",
-                        tint: StrandPalette.effortColor, title: title(activity),
+                rowBody(icon: "figure.run", tint: StrandPalette.effortColor, title: String(localized: "Activity"),
                         subtitle: timeRange(activity), badge: String(localized: "AUTO"),
                         value: effortValue(activity, fallbackKcal: nil, fallbackHr: bout.avgBpm),
                         frac: activity.effort.map { $0 / 100 })
@@ -259,28 +254,13 @@ struct DayActivitiesSection: View {
             workouts: workouts, detected: detected, mindful: mindful, hr: hr, scoring: scoring)
         guard !Task.isCancelled else { return }
         activities = built
-        // Sport suggestions: learn any new labelled workouts first, then guess each detected bout.
-        await repo.learnSportExamples(restingHR: scoring.restingHR, maxHR: scoring.maxHR)
-        let examples = SportExampleStore.all()
-        var next: [String: SportGuesser.Guess] = [:]
-        for a in built {
-            guard case .detected(let d) = a.kind,
-                  let f = await repo.sportFeatures(from: d.startSec, to: d.endSec,
-                                                   restingHR: scoring.restingHR, maxHR: scoring.maxHR),
-                  let g = SportGuesser.guess(f, examples: examples) else { continue }
-            next[a.id] = g
-        }
-        guard !Task.isCancelled else { return }
-        guesses = next
     }
 
     private func title(_ a: DayActivity) -> String {
         switch a.kind {
         case .sleep: return String(localized: "Sleep")
         case .workout(let w): return WorkoutSource.displaySport(w.sport)
-        // A suggestion reads as a question ("Tennis?") until the wearer saves it.
-        case .detected:
-            return guesses[a.id].map { WorkoutSource.displaySport($0.sport) + "?" } ?? String(localized: "Activity")
+        case .detected: return String(localized: "Activity")
         case .mindful: return String(localized: "Mindfulness")
         }
     }
