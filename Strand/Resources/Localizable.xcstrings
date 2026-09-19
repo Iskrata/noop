@@ -45846,7 +45846,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge"
+            "value": "Recovery"
           }
         },
         "es": {
@@ -127379,6 +127379,12 @@
             "value": "RUHE"
           }
         },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SLEEP"
+          }
+        },
         "es": {
           "stringUnit": {
             "state": "translated",
@@ -135984,7 +135990,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rest"
+            "value": "Sleep"
           }
         },
         "es": {

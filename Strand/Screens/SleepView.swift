@@ -418,7 +418,8 @@ struct SleepView: View {
     @ViewBuilder
     private func sleepSectionView(_ section: SleepSection, _ model: SleepModel) -> some View {
         switch section {
-        case .sleepMarks:      SleepMarkCard()
+        // Fork: the tap-to-log bed/wake card is dropped — sleep is detected automatically.
+        case .sleepMarks:      EmptyView()
         case .stages:          hero(model)
         case .bodyClock:       bodyClockDial(model)
         case .nightDetail:     NightDetailCard(model: model)

@@ -11,6 +11,9 @@ import StrandDesign
 /// complete" for a few seconds once it ends.
 struct SyncStatusPill: View {
     @EnvironmentObject private var live: LiveState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Reduce-motion and Low Power Mode hold the pill still instead of pulsing.
+    @ObservedObject private var motion = NoopMotionState.shared
     @State private var syncing = false
     @State private var justFinished = false
     @State private var pulse = false
@@ -18,17 +21,18 @@ struct SyncStatusPill: View {
     var body: some View {
         Group {
             if syncing {
-                pill(icon: "arrow.triangle.2.circlepath", tint: StrandPalette.metricCyan,
+                pill(icon: "arrow.triangle.2.circlepath", tint: StrandPalette.accent,
                      text: live.syncChunksThisSession > 0
                         ? String(localized: "Syncing · \(live.syncChunksThisSession)")
                         : String(localized: "Syncing…"))
                     .opacity(pulse ? 0.55 : 1)
                     .onAppear {
+                        guard !motion.poseStill(reduceMotion) else { return }
                         withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { pulse = true }
                     }
                     .onDisappear { pulse = false }
             } else if justFinished {
-                pill(icon: "checkmark.circle.fill", tint: StrandPalette.chargeColor,
+                pill(icon: "checkmark.circle.fill", tint: StrandPalette.statusPositive,
                      text: String(localized: "Sync complete"))
                     .transition(.opacity)
             }
@@ -81,18 +85,18 @@ struct StrapEnergyBar: View {
                 }
             }()
             Button { router.openDevices() } label: {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     Image(systemName: charging ? "bolt.fill" : "bolt")
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Self.tint(pct))
                     ticks(pct)
                     Text(pct.map { "\(Int($0.rounded()))%" } ?? "–")
-                        .font(StrandFont.rounded(22)).monospacedDigit()
+                        .font(StrandFont.rounded(14)).monospacedDigit()
                         .foregroundStyle(StrandPalette.textPrimary)
-                        .frame(minWidth: 58, alignment: .trailing)
+                        .frame(minWidth: 40, alignment: .trailing)
                 }
-                .padding(.horizontal, 18).padding(.vertical, 16)
-                .background(NoopPanelSurface(cornerRadius: 22, surfaceOpacity: cardOpacity))
+                .padding(.horizontal, 14).padding(.vertical, 6)
+                .background(NoopPanelSurface(cornerRadius: 12, surfaceOpacity: cardOpacity))
             }
             .buttonStyle(LiquidPressStyle())
             .accessibilityLabel(pct.map { String(localized: "Strap battery \(Int($0.rounded())) percent") }
@@ -102,21 +106,22 @@ struct StrapEnergyBar: View {
 
     private func ticks(_ pct: Double?) -> some View {
         let filled = Int(((pct ?? 0) / 100 * Double(Self.ticks)).rounded())
-        return HStack(spacing: 3) {
+        return HStack(spacing: 2) {
             ForEach(0..<Self.ticks, id: \.self) { i in
                 Capsule()
                     .fill(i < filled ? Self.tint(pct) : StrandPalette.textTertiary.opacity(0.25))
-                    .frame(height: 30)
+                    .frame(height: 10)
             }
         }
         .frame(maxWidth: .infinity)
     }
 
-    /// Green above 40 %, amber down to 15 %, red below — the strap's low-battery alert fires at 15 %.
+    /// The status trio: green above 40 %, amber down to 15 %, red below — the strap's low-battery alert
+    /// fires at 15 %.
     static func tint(_ pct: Double?) -> Color {
         guard let pct else { return StrandPalette.textTertiary }
-        if pct > 40 { return Color(hex: "#5BD64B") }
-        if pct > 15 { return Color(hex: "#F2C94C") }
-        return Color(hex: "#EB5757")
+        if pct > 40 { return StrandPalette.statusPositive }
+        if pct > 15 { return StrandPalette.statusWarning }
+        return StrandPalette.statusCritical
     }
 }

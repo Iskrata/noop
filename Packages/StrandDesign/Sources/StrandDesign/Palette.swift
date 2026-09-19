@@ -161,9 +161,21 @@ public enum StrandPalette {
     public static let whoopRecoveryBlue       = Color(light: "#3E7CB0", dark: "#67AEE6")
     public static let whoopRecoveryBlueBright = Color(light: "#6FA0CC", dark: "#8FC4EE")
     public static let whoopRecoveryBlueDeep   = Color(light: "#2A5A82", dark: "#4A7FAE")
-    public static let whoopRecoveryGreen  = Color(hex: "#16EC06")
-    public static let whoopRecoveryYellow = Color(hex: "#FFDE00")
-    public static let whoopRecoveryRed    = Color(hex: "#FF0026")
+    // Fork 2026-09-19: WHOOP's neon band colours (#16EC06 / #FFDE00 / #FF0026) softened a step so the three
+    // bands sit together on the black canvas; same hues, lower saturation.
+    public static let whoopRecoveryGreen  = Color(hex: "#3CD65A")
+    public static let whoopRecoveryYellow = Color(hex: "#F5C518")
+    public static let whoopRecoveryRed    = Color(hex: "#F2465A")
+
+    // Fork palette (2026-09-19): the three score worlds as three distinct hues on black — Recovery green
+    // (the recovery band green), Effort WHOOP Strain blue, Sleep violet (the sleep-stage family). Before
+    // this Recovery, Effort and Sleep were three blues.
+    public static let forkRecovery       = Color(light: "#239B45", dark: "#3CD65A")
+    public static let forkRecoveryDeep   = Color(light: "#1A7A35", dark: "#23A541")
+    public static let forkRecoveryBright = Color(light: "#4CC06A", dark: "#7BE88F")
+    public static let forkSleep          = Color(light: "#6C5BD6", dark: "#8E7CF6")
+    public static let forkSleepDeep      = Color(light: "#4F3FB8", dark: "#6A57D8")
+    public static let forkSleepBright    = Color(light: "#8E80E8", dark: "#B3A7FA")
 
     // MARK: Classic (throwback) data ramps — the recognizable health-app scale. Light/dark tuned.
     // Recovery: red → orange → amber → lime → green.
@@ -346,28 +358,28 @@ public enum StrandPalette {
     public static var chargeColor: Color {
         switch chartStyle {
         case .classic:  return Color(light: "#2E9E4F", dark: "#46B45A")
-        case .whoop:    return whoopRecoveryBlue
+        case .whoop:    return forkRecovery
         case .titanium: return Color(light: "#0F9D62", dark: "#03E095")
         }
     }
     public static var chargeDeep: Color {
         switch chartStyle {
         case .classic:  return Color(light: "#207A3C", dark: "#2E9E4F")
-        case .whoop:    return whoopRecoveryBlueDeep
+        case .whoop:    return forkRecoveryDeep
         case .titanium: return Color(light: "#0B7A4A", dark: "#0B9D62")
         }
     }
     public static var chargeBright: Color {
         switch chartStyle {
         case .classic:  return Color(light: "#5FBE6E", dark: "#86D98E")
-        case .whoop:    return whoopRecoveryBlueBright
+        case .whoop:    return forkRecoveryBright
         case .titanium: return Color(light: "#5FD89A", dark: "#6BF0B4")
         }
     }
     public static var chargeGlow: Color {
         switch chartStyle {
         case .classic:  return Color(light: "#2E9E4F", dark: "#46B45A")
-        case .whoop:    return whoopRecoveryBlue
+        case .whoop:    return forkRecovery
         case .titanium: return Color(light: "#0F9D62", dark: "#03E095")
         }
     }
@@ -410,28 +422,28 @@ public enum StrandPalette {
     public static var restColor: Color {
         switch chartStyle {
         case .classic:  return Color(light: "#3A80D6", dark: "#6FA8E8")
-        case .whoop:    return whoopSleep
+        case .whoop:    return forkSleep
         case .titanium: return Color(light: "#5E7896", dark: "#83A0B8")
         }
     }
     public static var restDeep: Color {
         switch chartStyle {
         case .classic:  return Color(light: "#203E73", dark: "#2A4C8F")
-        case .whoop:    return whoopSleepDeep
+        case .whoop:    return forkSleepDeep
         case .titanium: return Color(light: "#234F9E", dark: "#2F6FCB")
         }
     }
     public static var restBright: Color {
         switch chartStyle {
         case .classic:  return Color(light: "#6A4FC0", dark: "#8E6FD6")
-        case .whoop:    return whoopSleepBright
+        case .whoop:    return forkSleepBright
         case .titanium: return Color(light: "#5790DA", dark: "#6FA8E8")
         }
     }
     public static var restGlow: Color {
         switch chartStyle {
         case .classic:  return Color(light: "#3A80D6", dark: "#6FA8E8")
-        case .whoop:    return whoopSleep
+        case .whoop:    return forkSleep
         case .titanium: return Color(light: "#3A80D6", dark: "#4A90E2")
         }
     }

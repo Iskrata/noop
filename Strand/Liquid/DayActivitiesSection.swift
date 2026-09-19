@@ -39,7 +39,8 @@ struct DayActivitiesSection: View {
     @AppStorage(ScoreVisibility.hiddenKey) private var scoresHidden = true
 
     @State private var activities: [DayActivity] = []
-    @State private var pendingDetected: DetectedWorkout?
+    /// The row whose detail drawer is open.
+    @State private var selected: DayActivity?
     /// The detected bout being saved through the manual-workout sheet, so its sport can be picked.
     @State private var savingDetected: DetectedWorkout?
 
@@ -70,11 +71,18 @@ struct DayActivitiesSection: View {
                           restingHR: restingHR)) {
             await load()
         }
-        .confirmationDialog("Auto-detected activity", isPresented: Binding(
-            get: { pendingDetected != nil }, set: { if !$0 { pendingDetected = nil } }
-        ), presenting: pendingDetected) { bout in
-            Button("Save as workout…") { savingDetected = bout; pendingDetected = nil }
-            Button("Not a workout", role: .destructive) { dismiss(bout) }
+        .sheet(item: $selected) { activity in
+            ActivityDetailSheet(activity: activity, title: title(activity), effortText: detailEffort(activity),
+                                onSave: detectedBout(activity).map { bout in
+                                    // After the drawer's dismissal settles, so the two sheets don't collide.
+                                    { Task { @MainActor in
+                                        try? await Task.sleep(nanoseconds: 450_000_000)
+                                        savingDetected = bout
+                                    } }
+                                },
+                                onDismissBout: detectedBout(activity).map { bout in { dismiss(bout) } })
+                .environmentObject(repo)
+                .presentationDetents([.medium, .large])
         }
         .sheet(item: Binding(get: { savingDetected.map(IdentifiedBout.init) },
                              set: { if $0 == nil { savingDetected = nil } })) { item in
@@ -119,7 +127,7 @@ struct DayActivitiesSection: View {
             }
             .buttonStyle(.plain)
         case .workout(let w):
-            NavigationLink(value: TabRoute.workouts) {
+            Button { selected = activity } label: {
                 rowBody(icon: sportSymbol(w.sport), tint: StrandPalette.effortColor,
                         title: WorkoutSource.displaySport(w.sport), subtitle: timeRange(activity), badge: nil,
                         value: effortValue(activity, fallbackKcal: w.energyKcal, fallbackHr: w.avgHr),
@@ -127,7 +135,7 @@ struct DayActivitiesSection: View {
             }
             .buttonStyle(.plain)
         case .detected(let bout):
-            Button { pendingDetected = bout } label: {
+            Button { selected = activity } label: {
                 rowBody(icon: "figure.run", tint: StrandPalette.effortColor, title: String(localized: "Activity"),
                         subtitle: timeRange(activity), badge: String(localized: "AUTO"),
                         value: effortValue(activity, fallbackKcal: nil, fallbackHr: bout.avgBpm),
@@ -135,10 +143,13 @@ struct DayActivitiesSection: View {
             }
             .buttonStyle(.plain)
         case .mindful:
-            rowBody(icon: "brain.head.profile", tint: StrandPalette.metricCyan, title: String(localized: "Mindfulness"),
-                    subtitle: timeRange(activity), badge: nil,
-                    value: (String(max(1, (activity.endTs - activity.startTs) / 60)), String(localized: "MIN")),
-                    frac: nil)
+            Button { selected = activity } label: {
+                rowBody(icon: "brain.head.profile", tint: StrandPalette.metricCyan, title: title(activity),
+                        subtitle: timeRange(activity), badge: nil,
+                        value: (String(max(1, (activity.endTs - activity.startTs) / 60)), String(localized: "MIN")),
+                        frac: nil)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -245,9 +256,26 @@ struct DayActivitiesSection: View {
         activities = built
     }
 
+    private func title(_ a: DayActivity) -> String {
+        switch a.kind {
+        case .sleep: return String(localized: "Sleep")
+        case .workout(let w): return WorkoutSource.displaySport(w.sport)
+        case .detected: return String(localized: "Activity")
+        case .mindful: return String(localized: "Mindfulness")
+        }
+    }
+
+    private func detectedBout(_ a: DayActivity) -> DetectedWorkout? {
+        if case .detected(let d) = a.kind { return d } else { return nil }
+    }
+
+    private func detailEffort(_ a: DayActivity) -> String? {
+        guard !scoresHidden, let e = a.effort else { return nil }
+        return UnitFormatter.effortDisplay(e, scale: effortScale)
+    }
+
     private func dismiss(_ bout: DetectedWorkout) {
         repo.dismissDetectedSuggestion(bout)
-        pendingDetected = nil
         activities.removeAll { if case .detected(let d) = $0.kind { return d == bout } else { return false } }
     }
 }

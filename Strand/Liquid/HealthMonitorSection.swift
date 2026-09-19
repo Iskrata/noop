@@ -4,15 +4,19 @@ import WhoopStore
 
 /// Fork: Bevel's "Health Monitor" grid in place of Key Metrics — six vitals, each with its value, whether it
 /// runs lower or higher than the wearer's last 30 nights, and a vertical range bar: blue while inside the
-/// personal range (mean ± 1 SD), orange outside it (`HealthMonitorReading`).
+/// personal range (mean ± 1 SD), green outside it on the metric's good side (higher HRV, lower resting HR),
+/// orange outside it on the bad side (`HealthMonitorReading.tone`).
 struct HealthMonitorSection: View {
     let days: [DailyMetric]
     let dayKey: String
     let cardOpacity: Double
     var fahrenheit: Bool = false
 
-    static let inRangeColor = Color(hex: "#6E8EF7")
-    static let outOfRangeColor = Color(hex: "#F28C38")
+    // The fork palette's status trio (Palette.swift): soft blue in range, green on the good side, orange
+    // on the bad side.
+    static var inRangeColor: Color { StrandPalette.whoopRecoveryBlue }
+    static var outOfRangeColor: Color { StrandPalette.metricAmber }
+    static var betterColor: Color { StrandPalette.statusPositive }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -44,7 +48,13 @@ struct HealthMonitorSection: View {
     }
 
     private func tile(_ m: HealthMonitorMetric, _ r: HealthMonitorReading?) -> some View {
-        let tint = (r?.hasRange ?? false) && !(r?.inRange ?? true) ? Self.outOfRangeColor : Self.inRangeColor
+        let tint: Color = {
+            switch r?.tone(m) ?? .inRange {
+            case .inRange: return Self.inRangeColor
+            case .better:  return Self.betterColor
+            case .worse:   return Self.outOfRangeColor
+            }
+        }()
         return HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {

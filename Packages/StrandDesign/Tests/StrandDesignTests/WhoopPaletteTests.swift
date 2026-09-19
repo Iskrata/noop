@@ -65,9 +65,10 @@ final class WhoopPaletteTests: XCTestCase {
 
     func testDomainColoursUseWhoopBrandHexesWhenWhoopIsActive() {
         StrandPalette.chartStyle = .whoop
-        assertSameColor(StrandPalette.chargeColor, StrandPalette.whoopRecoveryBlue)
+        // Fork palette: Recovery green and Sleep violet; Effort keeps WHOOP's Strain blue.
+        assertSameColor(StrandPalette.chargeColor, StrandPalette.forkRecovery)
         assertSameColor(StrandPalette.effortColor, StrandPalette.whoopStrain)
-        assertSameColor(StrandPalette.restColor, StrandPalette.whoopSleep)
+        assertSameColor(StrandPalette.restColor, StrandPalette.forkSleep)
         assertSameColor(StrandPalette.statusPositive, StrandPalette.whoopRecoveryGreen)
         assertSameColor(StrandPalette.statusWarning, StrandPalette.whoopRecoveryYellow)
         assertSameColor(StrandPalette.statusCritical, StrandPalette.whoopRecoveryRed)
@@ -82,8 +83,9 @@ final class WhoopPaletteTests: XCTestCase {
         // `Color` built directly from each brand-guideline hex, rather than restating the literal as an
         // equality check, so an accidental edit to the wrong hex still fails this test.
         func rgba(_ c: Color) -> (r: Double, g: Double, b: Double, a: Double) { c.rgbaComponents }
-        XCTAssertEqual(rgba(StrandPalette.whoopRecoveryGreen).r, rgba(Color(hex: "#16EC06")).r, accuracy: 0.001)
-        XCTAssertEqual(rgba(StrandPalette.whoopRecoveryYellow).g, rgba(Color(hex: "#FFDE00")).g, accuracy: 0.001)
-        XCTAssertEqual(rgba(StrandPalette.whoopRecoveryRed).r, rgba(Color(hex: "#FF0026")).r, accuracy: 0.001)
+        // Fork: the band colours are softened a step from the brand's #16EC06 / #FFDE00 / #FF0026.
+        XCTAssertEqual(rgba(StrandPalette.whoopRecoveryGreen).r, rgba(Color(hex: "#3CD65A")).r, accuracy: 0.001)
+        XCTAssertEqual(rgba(StrandPalette.whoopRecoveryYellow).g, rgba(Color(hex: "#F5C518")).g, accuracy: 0.001)
+        XCTAssertEqual(rgba(StrandPalette.whoopRecoveryRed).r, rgba(Color(hex: "#F2465A")).r, accuracy: 0.001)
     }
 }

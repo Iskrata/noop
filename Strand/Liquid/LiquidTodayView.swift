@@ -347,7 +347,10 @@ struct LiquidTodayView: View {
                     // nothing and keeps its slot in the saved order.
                     ForEach(sectionOrder) { section in
                         switch section {
-                        case .hero: heroCard
+                        case .hero:
+                            heroCard
+                            // Fork: the strap battery as Bevel's slim Energy bar, right under the rings.
+                            StrapEnergyBar(cardOpacity: cardOpacity)
                         case .liveSession: if liveSessionsBeta { liveSessionStartRow }
                         case .synthesis: synthesisSection
                         // Fork: Bevel's Health Monitor grid in place of the Key Metrics tiles.
@@ -554,7 +557,7 @@ struct LiquidTodayView: View {
 
     private var scene: some View {
         // Fork: Bevel's header — sync pill centred with the profile picture on the right, then the big
-        // "Today, September 19 ⌄" title (tap for the day picker), then the strap battery as the Energy bar.
+        // "Today, September 19 ⌄" title (tap for the day picker). The strap battery sits under the rings.
         // The quick-add button and the NOOP wordmark are gone; Customize moved to the bottom of Today.
         VStack(alignment: .leading, spacing: 14) {
             ZStack {
@@ -573,11 +576,11 @@ struct LiquidTodayView: View {
             Button { showDayPicker = true } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(headerTitle)
-                        .font(StrandFont.rounded(30))
+                        .font(StrandFont.rounded(22))
                         .foregroundStyle(StrandPalette.textPrimary)
                         .lineLimit(1).minimumScaleFactor(0.6)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(StrandPalette.textSecondary)
                 }
                 .contentShape(Rectangle())
@@ -593,7 +596,6 @@ struct LiquidTodayView: View {
                     .frame(minWidth: 320, minHeight: 360)
                     .liquidPopoverAdaptation()
             }
-            StrapEnergyBar(cardOpacity: cardOpacity)
         }
         .padding(.bottom, 4)
     }
@@ -682,7 +684,9 @@ struct LiquidTodayView: View {
                 // widget/watch/Live Activity (`Repository.widgetAnchor`) and Android. Effort deliberately
                 // does NOT carry — it is today's own accumulation, so yesterday's number would be a false
                 // statement, not a stale one.
-                HeroScoreCell(label: String(localized: "Charge"), score: chargeDisplay.pct, tint: StrandPalette.chargeColor,
+                // Fork: the Recovery ring takes its band colour (green / yellow / red), WHOOP's reading.
+                HeroScoreCell(label: String(localized: "Charge"), score: chargeDisplay.pct,
+                              tint: chargeDisplay.pct.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.chargeColor,
                               detailRoute: .metric(HeroRingMetric.charge))
                 // #45: the hero Effort must honour the user's Effort scale like every other Effort read-out.
                 // Show the value on the chosen scale (0–100 or WHOOP 0–21) with the matching vessel max, and

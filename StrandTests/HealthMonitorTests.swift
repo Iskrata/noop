@@ -19,6 +19,17 @@ final class HealthMonitorTests: XCTestCase {
         XCTAssertFalse(r.inRange)
         XCTAssertEqual(r.direction, .lower)
         XCTAssertLessThan(r.position, HealthMonitorReading.bandLow)
+        XCTAssertEqual(r.tone(.hrv), .worse)
+        // The same distance on the good side of a higher-is-better metric is not a warning.
+        let high = HealthMonitorReading(value: 110, mean: 95, sd: 5)
+        XCTAssertEqual(high.tone(.hrv), .better)
+        XCTAssertEqual(high.tone(.restingHr), .worse)
+        XCTAssertEqual(high.tone(.respiratory), .worse)
+    }
+
+    func testAMonthOldValueIsNoData() {
+        let days = [day(1, hrv: 90), day(20, hrv: nil)]
+        XCTAssertNil(HealthMonitorReading.resolve(.hrv, days: days, dayKey: "2026-09-20"))
     }
 
     func testCarriesTheLatestValueAndNeedsABaselineForARange() throws {
