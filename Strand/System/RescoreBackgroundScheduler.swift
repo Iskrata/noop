@@ -73,11 +73,6 @@ enum RescoreBackgroundScheduler {
         return value.isFinite && value > 0 ? value : nil
     }
 
-    /// Mark a re-score as owed. Called by `IntelligenceEngine` once a pass is past every gate and is
-    /// definitely about to work — so that a kill leaves the debt behind — and by the deferral path, where
-    /// no pass is attempted at all but the work is just as outstanding.
-    /// Returns the token stamped on this debt. A pass keeps it and hands it back at completion; every
-    /// other caller (the deferral path) can ignore it, since it is not the one that will settle up.
     /// When the last pass started (unix seconds), written only by a pass that is about to work, never by
     /// the deferral path, so repeated deferrals cannot keep a stale debt looking fresh.
     static let lastAttemptStartedAtKey = "noop.rescoreLastAttemptStartedAt"
@@ -88,6 +83,11 @@ enum RescoreBackgroundScheduler {
         return started > 0 ? Date().timeIntervalSince1970 - started : nil
     }
 
+    /// Mark a re-score as owed. Called by `IntelligenceEngine` once a pass is past every gate and is
+    /// definitely about to work — so that a kill leaves the debt behind — and by the deferral path, where
+    /// no pass is attempted at all but the work is just as outstanding.
+    /// Returns the token stamped on this debt. A pass keeps it and hands it back at completion; every
+    /// other caller (the deferral path) can ignore it, since it is not the one that will settle up.
     /// - Parameter passStarting: the caller is a pass about to work (not the deferral path), so the attempt
     ///   time is recorded for `RescoreBackgroundPolicy.interruptedRetryCooldownSeconds`.
     @discardableResult
