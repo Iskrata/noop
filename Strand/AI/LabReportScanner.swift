@@ -21,6 +21,10 @@ extension AICoachEngine {
         }
     }
 
+    /// The scan always uses OpenAI's strongest vision model rather than the Coach's chat model (often a
+    /// mini): results are saved without a review step, so reading accuracy matters more than cost.
+    static let labScanModel = "gpt-5"
+
     var labScanGate: LabScanGate {
         guard CoachBriefScheduler.coachMasterEnabled else { return .aiOff }
         guard provider == .openAI else { return .notOpenAI }
@@ -35,9 +39,9 @@ extension AICoachEngine {
         guard labScanGate == .ready, let key = resolvedKey else { throw AICoachError.noKey }
         let started = Date()
         NSLog("LabScan: uploading %d page(s), %d KB, model %@", jpegPages.count,
-              jpegPages.reduce(0) { $0 + $1.count } / 1024, model)
+              jpegPages.reduce(0) { $0 + $1.count } / 1024, Self.labScanModel)
         let json = try await OpenAIClient().extractJSON(
-            key: key, model: model,
+            key: key, model: Self.labScanModel,
             systemPrompt: LabReportScan.systemPrompt, prompt: LabReportScan.userPrompt,
             jpegImages: jpegPages, schemaName: LabReportScan.schemaName, schema: LabReportScan.jsonSchema,
             session: session)

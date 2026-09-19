@@ -67,3 +67,46 @@ struct BiologyMarker: Identifiable {
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }
+
+// MARK: - Scan → Lab Book rows
+
+extension LabScanCandidate {
+    /// The Lab Book row this candidate saves as. `reportDay` fills a missing sample date. The printed name
+    /// rides in the note when it differs from the marker's own name (custom markers display it).
+    func labMarkerRow(deviceId: String, reportDay: String) -> LabMarkerRow {
+        let day = self.day ?? reportDay
+        let parsed = parsedValue
+        let catalogName = MarkerCatalog.definition(for: markerKey)?.displayName
+        let printed = item.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let note = printed.caseInsensitiveCompare(catalogName ?? "") == .orderedSame
+            ? nil : LabReportScan.reportNamePrefix + printed
+        let reference = referenceText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return LabMarkerRow(id: UUID().uuidString, deviceId: deviceId, markerKey: markerKey,
+                            category: category.rawValue, day: day, takenAt: LabBookFormat.noonEpoch(day),
+                            value: parsed.value, valueText: parsed.text,
+                            unit: unit.trimmingCharacters(in: .whitespacesAndNewlines),
+                            source: LabReportScan.sourceId, note: note,
+                            referenceText: reference?.isEmpty == false ? reference : nil)
+    }
+
+    /// The day for rows with no printed date: the most common sample date in this scan, else today.
+    static func reportDay(_ rows: [LabScanCandidate]) -> String {
+        let counts = Dictionary(grouping: rows.compactMap(\.day), by: { $0 }).mapValues(\.count)
+        return counts.max { $0.value == $1.value ? $0.key < $1.key : $0.value < $1.value }?.key
+            ?? LabBookFormat.dayKey(Date())
+    }
+
+    /// "LDL cholesterol 3.1 mmol/dL — unit not converted" for the saved-summary list.
+    var flagSummary: String {
+        let reasons: [String] = flags.subtracting([.noDate, .unmapped]).sorted { $0.rawValue < $1.rawValue }.map {
+            switch $0 {
+            case .lowConfidence:    return String(localized: "hard to read")
+            case .unitNotConverted: return String(localized: "unit not converted")
+            case .notNumeric:       return String(localized: "text result")
+            case .duplicate:        return String(localized: "listed twice")
+            case .noDate, .unmapped: return ""
+            }
+        }
+        return "\(item.name) \(valueInput) \(unit) — \(reasons.joined(separator: ", "))"
+    }
+}

@@ -36,9 +36,11 @@ stages, HRV, resting HR, heartbeat series). Charge/Effort/Rest themselves are no
   Today · Zones · Trends · Biology · More (Coach is the top row of More), Start-session row off.
 - Biology tab (`StrandiOS/Biology/`): bloodwork from the Lab Book store grouped by body system, report-range
   bars and history chart; "Scan lab report" OCRs photos/PDF pages on device, blanks personal lines (user can
-  toggle each), sends the redacted pages to OpenAI with a strict JSON schema (`LabReportScan`), converts to
-  catalog units and saves (source `ai-scan`) only after an editable review. Gated by the Coach switch, an
+  toggle each), sends the redacted pages to OpenAI (`gpt-5`, strict JSON schema, `LabReportScan`), converts to
+  catalog units and saves straight away (source `ai-scan`, no review step), listing rows worth a look. Gated by the Coach switch, an
   OpenAI key and Coach data consent.
+- Today COACHING line: one short sentence from the Coach, built on a today-vs-7/30-day digest, generated once
+  per day after Charge and Rest are both in (`Strand/AI/CoachingLine.swift`).
 - Stale-sync notification, heartbeat export toggle, MetricKit exit-reason logging.
 
 ## Working rules from the owner

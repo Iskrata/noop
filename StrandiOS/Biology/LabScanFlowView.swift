@@ -5,7 +5,8 @@ import StrandDesign
 import StrandImport
 
 /// Fork: the "Scan lab report" sheet. Pick photos or a PDF → on-device OCR blanks personal lines (the user
-/// sees and can adjust every box) → the redacted pages go to the user's own OpenAI key → review → save.
+/// sees and can adjust every box) → the redacted pages go to the user's own OpenAI key → the results are
+/// saved straight away (no review step, the owner's call) and summarised, flagged rows called out.
 /// Gated by the Coach's AI switch, OpenAI key and "use my data" consent (`AICoachEngine.labScanGate`).
 struct LabScanFlowView: View {
     @EnvironmentObject var repo: Repository
@@ -13,7 +14,7 @@ struct LabScanFlowView: View {
     @Environment(\.dismiss) private var dismiss
 
     private enum Step {
-        case pick, preparing, preview, uploading, review([LabScanCandidate]), failed(String)
+        case pick, preparing, preview, uploading, saved(count: Int, day: String, flagged: [String]), failed(String)
     }
 
     @State private var step: Step = .pick
@@ -55,8 +56,8 @@ struct LabScanFlowView: View {
             previewStep
         case .uploading:
             progress("Reading your results… this can take a minute.")
-        case .review(let rows):
-            LabScanReviewView(rows: rows) { saved, reportDay in await save(saved, reportDay: reportDay) }
+        case .saved(let count, let day, let flagged):
+            savedStep(count: count, day: day, flagged: flagged)
         case .failed(let message):
             VStack(spacing: 16) {
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 32))
@@ -126,6 +127,28 @@ struct LabScanFlowView: View {
         }
     }
 
+    private func savedStep(count: Int, day: String, flagged: [String]) -> some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+            Label(count == 1 ? "Saved 1 result" : "Saved \(count) results", systemImage: "checkmark.circle.fill")
+                .font(StrandFont.headline).foregroundStyle(HealthMonitorSection.inRangeColor)
+            Text("From the report dated \(LabBookFormat.dayFromKey(day)). Open a marker in Biology to edit or delete a reading.")
+                .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !flagged.isEmpty {
+                NoopCard(tint: HealthMonitorSection.outOfRangeColor) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Worth a look").font(StrandFont.subhead.weight(.semibold))
+                            .foregroundStyle(HealthMonitorSection.outOfRangeColor)
+                        ForEach(flagged, id: \.self) { Text($0).font(StrandFont.footnote).foregroundStyle(StrandPalette.textSecondary) }
+                    }
+                }
+            }
+            NoopButton("Done", kind: .primary, fullWidth: true) { dismiss() }
+            Spacer()
+        }
+        .padding(16)
+    }
+
     private func progress(_ text: LocalizedStringKey) -> some View {
         VStack(spacing: 14) {
             ProgressView().tint(StrandPalette.accent)
@@ -167,23 +190,27 @@ struct LabScanFlowView: View {
         do {
             let items = try await coach.scanLabReport(jpegPages: jpegs)
             let rows = LabReportScan.candidates(items)
-            step = rows.isEmpty
-                ? .failed(String(localized: "No lab results were found on these pages."))
-                : .review(rows)
+            guard !rows.isEmpty else {
+                step = .failed(String(localized: "No lab results were found on these pages."))
+                return
+            }
+            await save(rows)
         } catch {
             NSLog("LabScan: failed - \(error)")
             step = .failed(error.localizedDescription)
         }
     }
 
-    private func save(_ rows: [LabScanCandidate], reportDay: String) async {
+    private func save(_ rows: [LabScanCandidate]) async {
         guard let store = await repo.storeHandle() else { return }
+        let reportDay = LabScanCandidate.reportDay(rows)
         let markers = rows.map { $0.labMarkerRow(deviceId: repo.deviceId, reportDay: reportDay) }
+        let flagged = rows.filter { !$0.flags.subtracting([.noDate, .unmapped]).isEmpty }.map(\.flagSummary)
         do {
             let written = try await store.upsertLabMarkers(markers)
-            NSLog("LabScan: saved %d reading(s)", written)
+            NSLog("LabScan: saved %d reading(s), %d flagged", written, flagged.count)
             await repo.refresh()
-            dismiss()
+            step = .saved(count: markers.count, day: reportDay, flagged: flagged)
         } catch {
             NSLog("LabScan: save failed - \(error)")
             step = .failed(String(localized: "Couldn't save the readings: \(error.localizedDescription)"))
