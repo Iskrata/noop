@@ -28,16 +28,10 @@ private let strandDayParser: DateFormatter = {
     return f
 }()
 
-private func parseDay(_ day: String) -> Date? { strandDayParser.date(from: day) }
+private func parseDay(_ day: String) -> Date? { DayKeyDates.utc(day) }
 
 /// Localized long date for the hero "as of" line, with a fixed calendar-day time zone.
-private func longDate(_ d: Date) -> String {
-    let f = DateFormatter()
-    f.locale = AppLanguage.activeLocale
-    f.timeZone = TimeZone(identifier: "UTC")
-    f.dateFormat = "d MMM yyyy"
-    return f.string(from: d)
-}
+private func longDate(_ d: Date) -> String { DayKeyDates.label(d, format: "d MMM yyyy") }
 
 /// The category accent (colour communicates category only — never decoration).
 private func metricAccent(_ m: MetricDescriptor) -> Color {
@@ -254,11 +248,7 @@ enum MetricDetailSteps {
         case .weekly:
             return String(localized: "week of \(longDate(date))")
         case .monthly:
-            let formatter = DateFormatter()
-            formatter.locale = AppLanguage.activeLocale
-            formatter.timeZone = TimeZone(identifier: "UTC")
-            formatter.dateFormat = "MMMM yyyy"
-            return formatter.string(from: date)
+            return DayKeyDates.label(date, format: "MMMM yyyy")
         }
     }
 
@@ -401,11 +391,7 @@ func vitalReadingDateLabel(_ day: String, now: Date = Date()) -> String {
     if cal.isDate(date, inSameDayAs: now) { return String(localized: "Today") }
     if let yesterday = cal.date(byAdding: .day, value: -1, to: now),
        cal.isDate(date, inSameDayAs: yesterday) { return String(localized: "Yesterday") }
-    let formatter = DateFormatter()
-    formatter.locale = AppLanguage.activeLocale
-    formatter.timeZone = TimeZone(identifier: "UTC")
-    formatter.dateFormat = "d MMM"
-    return formatter.string(from: date)
+    return DayKeyDates.label(date, format: "d MMM")
 }
 
 // MARK: - Skin-temp explorer notes (#1847 / #1848)
