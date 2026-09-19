@@ -114,9 +114,7 @@ struct RootTabView: View {
                 guard selectedTab != 0 else { return }
                 let dx = v.translation.width, dy = v.translation.height
                 guard abs(dx) > 60, abs(dx) > abs(dy) * 1.6 else { return }
-                var next = min(4, max(0, selectedTab + (dx < 0 ? 1 : -1)))
-                // No tab claims tag 3 while Coach is switched off; step over it.
-                if next == 3, !coachEnabled { next += dx < 0 ? 1 : -1 }
+                let next = min(4, max(0, selectedTab + (dx < 0 ? 1 : -1)))
                 if next != selectedTab {
                     withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = next }
                 }
@@ -128,14 +126,13 @@ struct RootTabView: View {
         // its dynamic interaction with scrolling content automatically; older supported releases use
         // the corresponding system material and safe-area behaviour from the same TabView.
         TabView(selection: nativeTabSelection) {
-            // Fork order: Today, Zones, Trends, Coach, More. Sleep left the bar: Today's Rest score and the
-            // Activities sleep row push it, and it has a More row.
+            // Fork order: Today, Zones, Trends, Biology, More. Sleep left the bar: Today's Rest score and the
+            // Activities sleep row push it, and it has a More row. Coach moved to the top of More (and still
+            // opens as a sheet from its notification and the Today launcher).
             tab(todayTabRoot, "Today", "square.grid.2x2", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
             tab(ZonesView(), "Zones", "heart.circle", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
             tab(TrendsView(), "Trends", "chart.line.uptrend.xyaxis", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
-            if coachEnabled {
-                tab(CoachView(), "Coach", "sparkles", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
-            }
+            tab(BiologyView(), "Biology", "drop.fill", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
             moreTab(path: $tabPaths[4], scrollSignal: scrollTop[4]).tag(4)
         }
         .tint(StrandPalette.accent)
@@ -203,13 +200,12 @@ struct RootTabView: View {
                 routedPillar = dest
                 router.requestedDestination = nil
             case .coach:
-                // K3: Coach is now a top-level tab (tag 3) — switch to it directly instead of
-                // presenting it as a pillar sheet.
+                // Fork: Coach left the tab bar for More, so the request presents it as a pillar sheet.
                 //
                 // Guarded on the master switch, because this route is reachable with Coach OFF. A brief
                 // notification already sitting in Notification Centre still calls `openCoach()` when it is
-                // tapped (StrandApp wires `onCoachBriefTapped` to it), and with no tab claiming tag 3 the
-                // wearer would land on a BLANK tab. Dropping the request leaves them where they were, which
+                // tapped (StrandApp wires `onCoachBriefTapped` to it), and opening a switched-off Coach would
+                // show a feature the wearer turned off. Dropping the request leaves them where they were, which
                 // is the honest answer for a feature that is switched off.
                 guard coachEnabled else {
                     router.requestedDestination = nil
@@ -462,10 +458,12 @@ struct RootTabView: View {
             ScreenScaffold(title: "More", subtitle: "Everything else, one tap away",
                            onRefresh: { await repo.refresh() },
                            topBackground: liquidScaffoldSky()) {
-                // Fork: Biology (bloodwork) sits on its own at the top of More rather than taking a tab.
-                NoopCard(padding: 0) {
-                    MoreRow("Biology", "drop.fill", .biology)
-                        .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
+                // Fork: Coach gave its tab to Biology and sits on its own at the top of More (master switch on).
+                if coachEnabled {
+                    NoopCard(padding: 0) {
+                        MoreRow("Coach", "sparkles", .coach)
+                            .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
+                    }
                 }
                 moreSection("Insights") {
                     MoreRow("What Moves You", "wand.and.sparkles", .insightsHub)
@@ -605,7 +603,7 @@ private enum MoreDestination: Hashable {
     case insightsHub, intelligence, insights, explore, compare, sleep
     case live, workouts, liftLog, health, labBook, stress, breathe, intervals, rhythm, sleepSchedule
     case fusedRecord, appleHealth, miBand, dataSources, backupSync, shortcutsExport, noopLimitations
-    case alarms, automations, testCentre, siriShortcuts, powerSaving, settings, biology
+    case alarms, automations, testCentre, siriShortcuts, powerSaving, settings, coach
 
     @ViewBuilder var destination: some View {
         switch self {
@@ -638,7 +636,7 @@ private enum MoreDestination: Hashable {
         case .siriShortcuts:   SiriShortcutsSettingsView()
         case .powerSaving:     PowerSavingView()
         case .settings:        SettingsView()
-        case .biology:         BiologyView()
+        case .coach:           CoachView()
         }
     }
 }

@@ -33,7 +33,12 @@ stages, HRV, resting HR, heartbeat series). Charge/Effort/Rest themselves are no
   (`WhoopStore.scoresUnlabelledWhoop5Legacy`).
 - UI: WHOOP black palette (`NoopVisualStyle`), day-cycle sky off, hide-scores switch, Today Activities list
   (`DayActivities*`), Sleep Consistency pinned with a 7-night bedtime/wake sheet, Effort target band, tabs
-  Today · Zones · Trends · Coach · More, Start-session row off.
+  Today · Zones · Trends · Biology · More (Coach is the top row of More), Start-session row off.
+- Biology tab (`StrandiOS/Biology/`): bloodwork from the Lab Book store grouped by body system, report-range
+  bars and history chart; "Scan lab report" OCRs photos/PDF pages on device, blanks personal lines (user can
+  toggle each), sends the redacted pages to OpenAI with a strict JSON schema (`LabReportScan`), converts to
+  catalog units and saves (source `ai-scan`) only after an editable review. Gated by the Coach switch, an
+  OpenAI key and Coach data consent.
 - Stale-sync notification, heartbeat export toggle, MetricKit exit-reason logging.
 
 ## Working rules from the owner
