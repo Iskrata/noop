@@ -270,7 +270,7 @@ struct TodayView: View {
     @AppStorage(HostedCardPrefs.selectionKey) private var hostedCardsRaw = ""
     @AppStorage(TodayLayoutPrefs.orderKey) private var sectionOrderRaw = ""
     @AppStorage(TodayLayoutPrefs.hiddenKey) private var hiddenSectionsRaw = ""
-    @AppStorage(LiveSessionPrefs.betaKey) private var liveSessionsBeta = true
+    @AppStorage(LiveSessionPrefs.betaKey) private var liveSessionsBeta = LiveSessionPrefs.defaultEnabled
     private var sectionOrder: [TodaySection] {
         TodayLayoutPrefs.visibleOrder(orderRaw: sectionOrderRaw, hiddenRaw: hiddenSectionsRaw)
     }

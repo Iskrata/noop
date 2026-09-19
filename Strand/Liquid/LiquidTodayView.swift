@@ -98,9 +98,9 @@ struct LiquidTodayView: View {
     @State private var synthesisExpanded = false
     @State private var showLiveSession = false
 
-    /// Live Sessions (silent guardian) beta gate — the SAME key the Settings toggle writes. Default ON
-    /// (the entry is BETA-labelled in-UI); off removes the Start-session control entirely.
-    @AppStorage(LiveSessionPrefs.betaKey) private var liveSessionsBeta = true
+    /// Live Sessions (silent guardian) beta gate — the SAME key the Settings toggle writes. Default from
+    /// `LiveSessionPrefs.defaultEnabled`; off removes the Start-session control entirely.
+    @AppStorage(LiveSessionPrefs.betaKey) private var liveSessionsBeta = LiveSessionPrefs.defaultEnabled
     // #today-layout (parity with Android): the user-chosen section order, persisted under the byte-identical
     // "today.sectionOrder" key the Android TodayLayoutPrefs uses. Reordered via the Arrange sheet (native
     // drag-to-reorder rows); every section always renders (decode inserts a missing one at its default spot).

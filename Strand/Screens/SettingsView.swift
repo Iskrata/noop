@@ -1976,7 +1976,7 @@ struct SettingsView: View {
     /// Live Sessions (beta) — the silent-guardian in-workout coach. Default ON (the entry itself is
     /// BETA-labelled on the Liquid Today); off removes the Start-session control entirely. Same key the
     /// Today entry reads (`LiveSessionPrefs.betaKey`).
-    @AppStorage(LiveSessionPrefs.betaKey) private var liveSessionsBeta = true
+    @AppStorage(LiveSessionPrefs.betaKey) private var liveSessionsBeta = LiveSessionPrefs.defaultEnabled
     private var liveSessionsCard: some View {
         SettingsSection(
             icon: "shield.lefthalf.filled",

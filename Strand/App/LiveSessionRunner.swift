@@ -27,6 +27,9 @@ enum LiveSessionPrefs {
     /// Master switch for the whole entry. Default ON — the feature is BETA-labelled in-UI instead of
     /// hidden; turning it off removes the Start-session control from the Liquid Today entirely.
     static let betaKey = "noop.liveSessionsBeta"
+    /// Fork: OFF (upstream ON). The Start-session row sat on Today for a feature this wearer doesn't use;
+    /// the Settings toggle still turns it back on.
+    static let defaultEnabled = false
 }
 
 @MainActor
