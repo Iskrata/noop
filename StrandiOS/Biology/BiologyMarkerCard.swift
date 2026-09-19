@@ -45,9 +45,8 @@ struct BiologyMarkerCard: View {
                               systemImage: change > 0 ? "arrow.up.right" : "arrow.down.right")
                             .font(StrandFont.captionNumber).foregroundStyle(StrandPalette.textSecondary)
                     }
-                    let values = marker.numeric.compactMap(\.value)
-                    if values.count > 1 {
-                        Sparkline(values: values,
+                    if marker.numericValues.count > 1 {
+                        Sparkline(values: marker.numericValues,
                                   gradient: Gradient(colors: [tint.opacity(0.4), tint]),
                                   showsHover: false)
                             .frame(width: 64, height: 26)

@@ -16,45 +16,52 @@ enum BiologyNames {
     }
 }
 
-/// Fork: one marker as the Biology tab shows it — latest reading, the report's range, trend.
+/// Fork: one marker as the Biology tab shows it — latest reading, the report's range, trend. Everything the
+/// cards read is computed ONCE in `init` (at load), never per body pass: a populated screen re-evaluates
+/// every card on scroll, and recomputing ranges/filters there made it lag.
 struct BiologyMarker: Identifiable {
     let key: String
     let name: String
     let group: BiologyGroup
     /// Oldest first.
     let readings: [LabMarkerRow]
-
-    var id: String { key }
-    var latest: LabMarkerRow? { readings.last }
-    var numeric: [LabMarkerRow] { readings.filter { $0.value != nil } }
-
+    let latest: LabMarkerRow?
+    let numeric: [LabMarkerRow]
+    let numericValues: [Double]
     /// The latest reading's own range, else the most recent range the user's reports gave for this marker
     /// (only from readings in the same unit, so a stray mg/dL range never judges a mmol/L value).
-    var range: LabReferenceRange? {
-        guard let latest else { return nil }
-        if let own = LabReferenceRange.parse(latest.referenceText) { return own }
-        return readings.reversed()
-            .filter { $0.unit == latest.unit }
-            .lazy.compactMap { LabReferenceRange.parse($0.referenceText) }.first
-    }
-
-    var status: LabReferenceRange.Status? {
-        guard let v = latest?.value, let range else { return nil }
-        return range.status(v)
-    }
-
+    let range: LabReferenceRange?
+    let status: LabReferenceRange.Status?
     /// Latest value minus the one before it (numeric readings only).
-    var change: Double? {
-        let n = numeric.compactMap(\.value)
-        guard n.count >= 2 else { return nil }
-        return n[n.count - 1] - n[n.count - 2]
-    }
+    let change: Double?
+    let valueLabel: String
 
-    var valueLabel: String {
-        guard let latest else { return "—" }
-        if let text = latest.valueText, !text.isEmpty { return text }
-        if let v = latest.value { return LabBookFormat.value(v, key: key) }
-        return "—"
+    var id: String { key }
+
+    init(key: String, name: String, group: BiologyGroup, readings: [LabMarkerRow]) {
+        self.key = key
+        self.name = name
+        self.group = group
+        self.readings = readings
+        let latest = readings.last
+        self.latest = latest
+        numeric = readings.filter { $0.value != nil }
+        numericValues = numeric.compactMap(\.value)
+        let range: LabReferenceRange? = latest.flatMap { latest in
+            LabReferenceRange.parse(latest.referenceText) ?? readings.reversed()
+                .filter { $0.unit == latest.unit }
+                .lazy.compactMap { LabReferenceRange.parse($0.referenceText) }.first
+        }
+        self.range = range
+        status = latest?.value.flatMap { v in range?.status(v) }
+        change = numericValues.count >= 2 ? numericValues[numericValues.count - 1] - numericValues[numericValues.count - 2] : nil
+        if let text = latest?.valueText, !text.isEmpty {
+            valueLabel = text
+        } else if let v = latest?.value {
+            valueLabel = LabBookFormat.value(v, key: key)
+        } else {
+            valueLabel = "—"
+        }
     }
 
     /// Group every reading by marker key.

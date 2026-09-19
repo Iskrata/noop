@@ -76,26 +76,34 @@ public struct LabReferenceRange: Equatable, Sendable {
     /// optionally followed by a unit. nil for anything else.
     public static func parse(_ text: String?) -> LabReferenceRange? {
         guard let t = text?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !t.isEmpty else { return nil }
-        let num = "([0-9]+(?:[.,][0-9]+)?)"
-        if let m = captures(t, "^\(num)\\s*(?:-|–|—|to|\\.\\.)\\s*\(num)(?![0-9])") {
+        if let m = captures(t, twoSided) {
             return LabReferenceRange(low: number(m[0]), high: number(m[1]))
         }
-        if let m = captures(t, "^(?:<=?|≤|up to|under|below)\\s*\(num)(?![0-9])") {
+        if let m = captures(t, upperOnly) {
             return LabReferenceRange(low: nil, high: number(m[0]))
         }
-        if let m = captures(t, "^(?:>=?|≥|over|above)\\s*\(num)(?![0-9])") {
+        if let m = captures(t, lowerOnly) {
             return LabReferenceRange(low: number(m[0]), high: nil)
         }
         return nil
+    }
+
+    // Compiled once: `parse` runs for every marker card, so building these per call made scrolling lag.
+    private static let num = "([0-9]+(?:[.,][0-9]+)?)"
+    private static let twoSided = regex("^\(num)\\s*(?:-|–|—|to|\\.\\.)\\s*\(num)(?![0-9])")
+    private static let upperOnly = regex("^(?:<=?|≤|up to|under|below)\\s*\(num)(?![0-9])")
+    private static let lowerOnly = regex("^(?:>=?|≥|over|above)\\s*\(num)(?![0-9])")
+
+    private static func regex(_ pattern: String) -> NSRegularExpression {
+        try! NSRegularExpression(pattern: pattern)
     }
 
     private static func number(_ s: String) -> Double? {
         Double(s.replacingOccurrences(of: ",", with: "."))
     }
 
-    private static func captures(_ s: String, _ pattern: String) -> [String]? {
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) else { return nil }
+    private static func captures(_ s: String, _ regex: NSRegularExpression) -> [String]? {
+        guard let match = regex.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) else { return nil }
         return (1..<match.numberOfRanges).compactMap { Range(match.range(at: $0), in: s).map { String(s[$0]) } }
     }
 }

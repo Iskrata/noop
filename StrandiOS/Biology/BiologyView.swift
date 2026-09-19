@@ -11,7 +11,10 @@ struct BiologyView: View {
     @EnvironmentObject var repo: Repository
 
     @State private var markers: [BiologyMarker] = []
+    /// Grouped once per load (not per body pass — see BiologyMarker).
+    @State private var groups: [(BiologyGroup, [BiologyMarker])] = []
     @State private var loaded = false
+    @State private var loadedRows: [LabMarkerRow] = []
     @State private var showingScan = false
     @State private var showingEditor = false
     @State private var detailKey: String?
@@ -19,39 +22,35 @@ struct BiologyView: View {
     /// Categories that aren't results (imaging notes, appointment notes) stay in the Lab Book only.
     private static let excluded: Set<String> = [LabMarkerCategory.imaging.rawValue, LabMarkerCategory.appointmentNote.rawValue]
 
-    private var groups: [(BiologyGroup, [BiologyMarker])] {
-        let byGroup = Dictionary(grouping: markers, by: \.group)
-        return BiologyGroup.allCases.compactMap { g in byGroup[g].map { (g, $0) } }
-    }
-
     var body: some View {
         ScreenScaffold(title: "Biology", subtitle: "Your bloodwork, read from your own lab reports.",
                        onRefresh: { await load() }, lazy: true, topBackground: liquidScaffoldSky()) {
-            VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
-                BiologySummaryCard(markers: markers,
-                                   onScan: { showingScan = true },
-                                   onAdd: { showingEditor = true })
-                if !loaded {
-                    ComingSoon(what: "Reading your results…", symbol: "drop.fill")
-                } else if markers.isEmpty {
-                    Text("No results yet. Scan a lab report or add a reading to start.")
-                        .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                } else {
-                    ForEach(groups, id: \.0) { group, items in
-                        VStack(alignment: .leading, spacing: NoopMetrics.gap) {
-                            SectionHeader(LocalizedStringKey(group.displayName),
-                                          overline: items.count == 1 ? "1 marker" : "\(items.count) markers")
-                            ForEach(items) { marker in
-                                Button { detailKey = marker.key } label: { BiologyMarkerCard(marker: marker) }
-                                    .buttonStyle(LiquidPressStyle())
-                            }
-                        }
+            // Flat children, no wrapping VStack: the scaffold's LazyVStack (spacing 20) then builds each
+            // header and card on demand as it scrolls in. Paddings restore the section/item rhythm.
+            BiologySummaryCard(markers: markers,
+                               onScan: { showingScan = true },
+                               onAdd: { showingEditor = true })
+            if !loaded {
+                ComingSoon(what: "Reading your results…", symbol: "drop.fill")
+            } else if markers.isEmpty {
+                Text("No results yet. Scan a lab report or add a reading to start.")
+                    .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+            } else {
+                ForEach(groups, id: \.0) { group, items in
+                    SectionHeader(LocalizedStringKey(group.displayName),
+                                  overline: items.count == 1 ? "1 marker" : "\(items.count) markers")
+                        .padding(.top, NoopMetrics.sectionGap - 20)
+                    ForEach(items) { marker in
+                        Button { detailKey = marker.key } label: { BiologyMarkerCard(marker: marker) }
+                            .buttonStyle(LiquidPressStyle())
+                            .padding(.top, NoopMetrics.gap - 20)
                     }
                 }
-                Text("Ranges are the ones printed on your own report. NOOP doesn't diagnose; ask your doctor what a result means for you.")
-                    .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
+            Text("Ranges are the ones printed on your own report. NOOP doesn't diagnose; ask your doctor what a result means for you.")
+                .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, NoopMetrics.sectionGap - 20)
         }
         .task(id: repo.refreshSeq) { await load() }
         .sheet(isPresented: $showingScan) { LabScanFlowView() }
@@ -67,8 +66,15 @@ struct BiologyView: View {
     }
 
     private func load() async {
-        guard let rows = await LabBookView.loadAll(repo) else { return }
-        markers = BiologyMarker.build(rows.filter { !Self.excluded.contains($0.category) })
+        guard let all = await LabBookView.loadAll(repo) else { return }
+        let rows = all.filter { !Self.excluded.contains($0.category) }
+        // Every strap sync bumps refreshSeq; rebuilding identical cards then is a visible hitch.
+        guard !loaded || rows != loadedRows else { return }
+        loadedRows = rows
+        let built = BiologyMarker.build(rows)
+        let byGroup = Dictionary(grouping: built, by: \.group)
+        groups = BiologyGroup.allCases.compactMap { g in byGroup[g].map { (g, $0) } }
+        markers = built
         loaded = true
     }
 
