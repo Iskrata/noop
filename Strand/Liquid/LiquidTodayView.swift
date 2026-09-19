@@ -658,14 +658,14 @@ struct LiquidTodayView: View {
                         .foregroundStyle(StrandPalette.textTertiary)
                     Text(chargeDisplay.calibrationDetail ?? aiCoachingLine ?? synthLine)
                         .font(StrandFont.body).foregroundStyle(StrandPalette.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, NoopMetrics.space2)
-                // One request per day per change in last night's Charge/Rest (cached in the engine), so a
-                // growing Effort doesn't re-ask all day. Today only; past days keep the on-device line.
+                // One request per day, once Charge and Rest are both in (cached in the engine); re-run on a
+                // score change only to pick up that first moment. Today only; past days keep the on-device line.
                 .task(id: coachingFingerprint) {
                     guard selectedDayOffset == 0 else { aiCoachingLine = nil; return }
-                    aiCoachingLine = await coach.coachingLine(fingerprint: coachingFingerprint)
+                    aiCoachingLine = await coach.coachingLine(dayKey: selectedDayKey, charge: chargeDisplay.pct, rest: restScore)
                 }
             }
         }

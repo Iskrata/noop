@@ -253,8 +253,10 @@ final class AICoachEngine: ObservableObject {
         didSet { UserDefaults.standard.set(multimodalChartEnabled, forKey: Self.multimodalChartKey) }
     }
 
-    private let repo: Repository
+    let repo: Repository
     let session: URLSession
+    /// Fork: the in-flight coaching-line request per day (CoachingLine.swift), so concurrent callers share it.
+    var coachingInFlight: [String: Task<String?, Never>] = [:]
 
     private static let providerKey = "ai.provider"
     private static let modelKey = "ai.model"
@@ -941,36 +943,6 @@ final class AICoachEngine: ObservableObject {
         return clean.isEmpty ? nil : clean
     }
 
-    /// Fork: the one- or two-sentence COACHING line under Today's rings (Bevel's), in a pirate's voice.
-    /// Generated at most once per day per change in today's scores and cached, so opening Today doesn't
-    /// spend a request each time. nil when Coach isn't configured/consented or the call fails — Today then
-    /// falls back to its on-device readiness line.
-    private static let coachingInstruction = """
-    Based on the data above, write today's coaching note for my home screen: ONE or TWO sentences, \
-    at most 35 words, no Markdown, no lists. Tie my sleep and recovery to what I should do today. \
-    Talk like a pirate - salty, playful, full of "arr" and nautical slang - but keep the advice real \
-    and cite at most one number.
-    """
-    static let coachingCacheKey = "fork.coachingLine.v1"
-
-    func coachingLine(fingerprint: String) async -> String? {
-        if let cached = UserDefaults.standard.dictionary(forKey: Self.coachingCacheKey),
-           cached["fp"] as? String == fingerprint, let text = cached["text"] as? String {
-            return text
-        }
-        guard CoachBriefScheduler.coachMasterEnabled, isConfigured, dataConsent, let key = resolvedKey else {
-            return nil
-        }
-        let context = await buildFullContext()
-        let wire: [(role: ChatMessage.Role, content: String)] =
-            [(.user, context + "\n\n---\n\n" + Self.coachingInstruction)]
-        guard let reply = try? await callProvider(key: key, messages: wire) else { return nil }
-        let clean = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { return nil }
-        UserDefaults.standard.set(["fp": fingerprint, "text": clean], forKey: Self.coachingCacheKey)
-        return clean
-    }
-
     /// Full data context = the metrics summary + recent workouts (+ an OPT-IN on-device-signals summary
     /// when the second consent is on). Used when the user has granted data access.
     func buildFullContext() async -> String {
@@ -1063,7 +1035,7 @@ final class AICoachEngine: ObservableObject {
     }
 
     /// Dispatch to the user's chosen provider client.
-    private func callProvider(key: String,
+    func callProvider(key: String,
                               messages: [(role: ChatMessage.Role, content: String)]) async throws -> String {
         try await provider.client.send(
             key: key,
