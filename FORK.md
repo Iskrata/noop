@@ -21,7 +21,7 @@ stages, HRV, resting HR, heartbeat series). Charge/Effort/Rest themselves are no
 - Project is generated: `xcodegen generate` (never hand-edit `Strand.xcodeproj`). Scheme `NOOPiOS`.
 - **Always Release on the phone**:
   `xcodebuild -project Strand.xcodeproj -scheme NOOPiOS -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build -allowProvisioningUpdates build`
-  then `xcrun devicectl device install app --device BB3E4333-ACC6-5348-BA35-C66955060441 "build/Build/Products/Release-iphoneos/NOOP Staging.app"`
+  then `xcrun devicectl device install app --device <iPhone id from `xcrun devicectl list devices`> "build/Build/Products/Release-iphoneos/NOOP Staging.app"`
   (phone must be unlocked; a cable is more reliable than Wi-Fi).
 - App tests: `xcodebuild test -scheme Strand -destination 'platform=macOS' -derivedDataPath build-mac -only-testing:StrandTests/<Class>`.
   Package tests: `swift test` inside `Packages/<Pkg>`.
