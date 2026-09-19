@@ -327,9 +327,12 @@ struct LiquidVessel: View {
         // are static), so the higher rate is affordable and the liquid actually flows.
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !onScreen)) { tl in
             let now = liquidSeconds(tl.date)
-            Canvas { context, size in
-                sim.step(now: now, tilt: LiquidMotion.shared.tilt, target: value ?? 0)
-                LiquidRender.vessel(context, size, sim, now: now, tint: tint)
+            // Step on main, draw a frozen copy: the canvas renders off the main thread, and the splash tap
+            // mutates `sim` on main, so the renderer must never read the live instance.
+            let _ = sim.step(now: now, tilt: LiquidMotion.shared.tilt, target: value ?? 0)
+            let frame = sim.snapshot()
+            Canvas(rendersAsynchronously: true) { context, size in
+                LiquidRender.vessel(context, size, frame, now: now, tint: tint)
             }
         }
         .aspectRatio(1, contentMode: .fit)
@@ -420,7 +423,8 @@ struct LiquidThread: View {
     private var liveThread: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !onScreen)) { tl in   // 60fps to flow smoothly on ProMotion
             let now = liquidSeconds(tl.date)
-            Canvas { context, size in
+            // Pure over its captured values, so it can render off the main thread.
+            Canvas(rendersAsynchronously: true) { context, size in
                 LiquidRender.thread(context, size, values: bpm, now: now, tint: tint, segments: segments)
             }
         }

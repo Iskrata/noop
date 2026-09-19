@@ -229,6 +229,20 @@ final class LiquidSim {
         }
     }
 
+    /// A frozen copy of this frame's state, for a renderer that may run off the main thread
+    /// (`Canvas(rendersAsynchronously:)`): the live sim keeps stepping (and splashing) on main while the
+    /// copy is drawn, so the two never touch the same storage.
+    func snapshot() -> LiquidSim { LiquidSim(copying: self) }
+
+    private init(copying o: LiquidSim) {
+        level = o.level; target = o.target
+        a = o.a; av = o.av; ab = o.ab; abv = o.abv
+        energy = o.energy; p1 = o.p1; p2 = o.p2
+        flecks = o.flecks; drops = o.drops
+        nudge = o.nudge; lastTime = o.lastTime
+        reduceMotion = o.reduceMotion
+    }
+
     // material constants (the locked "liquid glass + flake")
     private let kSpring = 31.0, cSpring = 5.5, kBack = 20.0, cBack = 4.3, phaseMul = 0.85
 
