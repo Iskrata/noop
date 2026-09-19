@@ -12,6 +12,17 @@ extension WhoopStore {
     /// standard BLE (7) already covers beat for beat.
     static let scorableWhoop5Channels = "(5, 7)"
 
+    /// Fork: score a WHOOP 5 window from its unlabelled legacy rows when it has no verified transport.
+    ///
+    /// Upstream withholds them because some installs banked mixed units under NULL. This strap's legacy
+    /// rows (2026-08-24 → 09-11) were checked against its labelled ones on the phone DB copy of 09-19:
+    /// same range (333–2400 ms vs 325–2400), same mean (1006 vs 1010 ms) and the same density
+    /// (~39.6k vs ~38k beats a day), so they are one transport in ms. Without them those nights stage
+    /// with no breathing term (deep/REM 11.5/15.3 % vs WHOOP's 19.8/28.7 %) and have no HRV or Charge.
+    /// A window that has a labelled transport still reads only that transport. Mutable only so the
+    /// upstream policy tests can pin the strict behaviour; nothing in the app writes it.
+    nonisolated(unsafe) static var scoresUnlabelledWhoop5Legacy = true
+
     /// The earliest beat this device has banked that the unit policy can actually score, or nil when it
     /// has none at all.
     ///
@@ -20,7 +31,9 @@ extension WhoopStore {
     /// scoring would then refuse. The caller turns it into a local day key; the calendar is the app's
     /// policy, not the store's.
     public func firstScorableWhoop5RRTimestamp(deviceId: String) async throws -> Int? {
-        try syncRead { db in
+        // Fork: every recorded beat is scorable (see `scoresUnlabelledWhoop5Legacy`).
+        if Self.scoresUnlabelledWhoop5Legacy { return try await firstRecordedRRTimestamp(deviceId: deviceId) }
+        return try syncRead { db in
             try Int.fetchOne(db, sql: """
                 SELECT MIN(ts) FROM rrInterval
                 WHERE deviceId = ? AND srcChannel IN \(Self.scorableWhoop5Channels)
@@ -49,7 +62,9 @@ extension WhoopStore {
     /// but insufficient transport all return false and therefore remain ordinary current-score outcomes.
     public func legacyWhoop5RRWithheld(deviceId: String, from: Int, to: Int,
                                        unlabelledAliasOfWhoop5: Bool = false) async throws -> Bool {
-        try syncRead { db in
+        // Fork: legacy rows are scored (see `scoresUnlabelledWhoop5Legacy`), so nothing is withheld.
+        if Self.scoresUnlabelledWhoop5Legacy { return false }
+        return try syncRead { db in
             guard try Self.isWhoop5RRSource(db: db, deviceId: deviceId,
                                             unlabelledAliasOfWhoop5: unlabelledAliasOfWhoop5) else {
                 return false

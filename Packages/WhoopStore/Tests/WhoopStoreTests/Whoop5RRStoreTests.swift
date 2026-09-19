@@ -5,6 +5,31 @@ import WhoopProtocol
 
 final class Whoop5RRStoreTests: XCTestCase {
     private let id = "my-whoop"
+
+    // These pin upstream's strict policy; the fork's legacy fallback is pinned in
+    // `testForkScoresUnlabelledLegacyOnlyWhereNoLabelledTransportExists`.
+    override func setUp() { super.setUp(); WhoopStore.scoresUnlabelledWhoop5Legacy = false }
+    override func tearDown() { WhoopStore.scoresUnlabelledWhoop5Legacy = true; super.tearDown() }
+
+    /// Fork: a WHOOP 5 window with only unlabelled rows scores them; a window that has a labelled
+    /// transport still reads only that transport, and nothing is reported as withheld.
+    func testForkScoresUnlabelledLegacyOnlyWhereNoLabelledTransportExists() async throws {
+        WhoopStore.scoresUnlabelledWhoop5Legacy = true
+        let s = try await WhoopStore.inMemory()
+        try registry(s, model: "5.0 MG")
+        _ = try await s.insert(Streams(rr: (100..<110).map { RRInterval(ts: $0, rrMs: 1000) }), deviceId: id)
+        _ = try await s.insert(Streams(rr: [RRInterval(ts: 500, rrMs: 1000),
+                                            RRInterval(ts: 501, rrMs: 977, srcChannel: .whoop5Standard)]),
+                               deviceId: id)
+        let legacyOnly = try await read(s, from: 0, to: 200)
+        XCTAssertEqual(legacyOnly.count, 10)
+        let mixed = try await read(s, from: 400, to: 600)
+        XCTAssertEqual(mixed.map(\.rrMs), [977])
+        let withheld = try await s.legacyWhoop5RRWithheld(deviceId: id, from: 0, to: 200)
+        XCTAssertFalse(withheld)
+        let firstScorable = try await s.firstScorableWhoop5RRTimestamp(deviceId: id)
+        XCTAssertEqual(firstScorable, 100)
+    }
     private func registry(_ store: WhoopStore, model: String, brand: String = "WHOOP") throws {
         try store.registryWriter.write { db in
             try db.execute(sql: "UPDATE pairedDevice SET model = ?, brand = ? WHERE id = ?",

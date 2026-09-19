@@ -20,7 +20,9 @@ final class RecoveryScorerTests: XCTestCase {
             respBaseline: nil,
             sleepPerf: RecoveryScorer.sleepPerfCenter)
         XCTAssertNotNil(r)
-        XCTAssertEqual(r!, 57.93, accuracy: 0.5)
+        // Fork: 69.37 (upstream 57.93). The fork's `logisticZ0` puts a baseline night where this wearer's
+        // WHOOP history puts it rather than at WHOOP's population mean.
+        XCTAssertEqual(r!, 69.37, accuracy: 0.5)
     }
 
     func testRecoveryHigherWhenHRVAboveAndRHRBelow() {
@@ -38,7 +40,7 @@ final class RecoveryScorerTests: XCTestCase {
             sleepPerf: 0.70)!
         XCTAssertGreaterThan(good, bad)
         XCTAssertGreaterThan(good, 90)   // matches Python golden ~97
-        XCTAssertLessThan(bad, 15)       // matches Python golden ~7
+        XCTAssertLessThan(bad, 25)       // fork constants ~21 (upstream Python golden ~7)
     }
 
     func testRecoveryClampedToRange() {
@@ -339,6 +341,7 @@ final class RecoveryScorerTests: XCTestCase {
             hrv: 50, rhr: 60, resp: nil,
             hrvBaseline: hrvB, rhrBaseline: nil, respBaseline: nil,
             sleepPerf: 0.85)
-        XCTAssertEqual(scored!, 57.932425214874954, accuracy: 1e-12)
+        // Fork constants: 69.36841537221008 (upstream and the Kotlin twin pin 57.932425214874954).
+        XCTAssertEqual(scored!, 69.36841537221008, accuracy: 1e-12)
     }
 }

@@ -441,8 +441,10 @@ extension WhoopStore {
             // One transport for the complete requested interval. Legacy WHOOP 5 rows mix units and
             // origins, so they remain stored but cannot be converted or spliced into a scored beat train.
             // This subquery uses the SAME time/suspect predicates as the outer read, before LIMIT.
+            // Fork: `IS` instead of `=` — a window with no verified transport makes the subquery NULL, and
+            // `srcChannel IS NULL` then reads its unlabelled legacy rows (`scoresUnlabelledWhoop5Legacy`).
             let sourcePredicate = strictWhoop5 ? """
-                srcChannel = (SELECT MIN(srcChannel) FROM rrInterval
+                srcChannel \(Self.scoresUnlabelledWhoop5Legacy ? "IS" : "=") (SELECT MIN(srcChannel) FROM rrInterval
                     WHERE deviceId = :d AND ts >= :f AND ts <= :t AND srcChannel IN \(Self.scorableWhoop5Channels)
                     AND (tsSuspect IS NULL OR tsSuspect <> 1))
                 """ : "1"

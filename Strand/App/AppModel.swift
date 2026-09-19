@@ -494,6 +494,12 @@ final class AppModel: ObservableObject {
                                                                flagKey: IntelligenceEngine.restingHRRescoreFlagKey) {
                 UserDefaults.standard.set(true, forKey: IntelligenceEngine.restingHRHealthRewriteOwedKey)
             }
+            // One-shot rescore for the legacy-R-R read and the WHOOP-fitted Charge. Charge never reaches Apple
+            // Health; the legacy nights' stages, HRV and resting HR do, so Health replaces those nights once.
+            if await self.intelligence.runEffortRescoreIfNeeded(historyDays: historyDays,
+                                                               flagKey: IntelligenceEngine.legacyRRChargeRescoreFlagKey) {
+                UserDefaults.standard.set(true, forKey: IntelligenceEngine.healthHistoryRewriteOwedKey)
+            }
             while !Task.isCancelled {
                 // #547 RE-POLLUTION: a sync since the last tick may have armed a re-heal (its ingest gate
                 // dropped bad-clock records). `runTimestampHealIfNeeded` honours the pending flag even after

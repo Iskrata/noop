@@ -51,7 +51,12 @@ public enum RecoveryScorer {
     // MARK: - Constants (recovery.py)
 
     public static let wHRV: Double = 0.55
-    public static let wRHR: Double = 0.20
+    /// Fork: 0.05 (upstream 0.20). Resting HR moves with HRV, so at 0.20 a rough morning was
+    /// penalised twice. Fitted on this wearer's WHOOP history together with `logisticK`/`logisticZ0`
+    /// below: 2025-08-24 → 2026-02 to fit, 2026-03 → 08 (170 days) held out. On the held-out days,
+    /// WHOOP's own inputs through this scorer land MAE 5.3 / bias +1.8 / r 0.946 against WHOOP's
+    /// recovery, vs 8.7 / −8.0 with the upstream constants (scratch `scorecheck/recal2.py`, 2026-09-19).
+    public static let wRHR: Double = 0.05
     public static let wResp: Double = 0.05
     public static let wSleep: Double = 0.15
     /// Skin-temperature deviation weight (Charge/Effort/Rest redesign). HRV gave up
@@ -80,9 +85,10 @@ public enum RecoveryScorer {
     public static let wActivityBalance: Double = 0.05
 
     /// Logistic spread: ±2 z-units ≈ full Red–Green band (15%–95%).
-    public static let logisticK: Double = 1.6
-    /// Logistic offset so Z=0 → 58%.
-    public static let logisticZ0: Double = -0.20
+    /// Fork: 1.34 (upstream 1.6), fitted with `wRHR` above.
+    public static let logisticK: Double = 1.34
+    /// Logistic offset. Fork: −0.61 (upstream −0.20, which put Z=0 at 58%), fitted with `wRHR` above.
+    public static let logisticZ0: Double = -0.61
     /// WHOOP-published population-average recovery (%). Cold-start fallback.
     public static let populationMean: Double = 58.0
 

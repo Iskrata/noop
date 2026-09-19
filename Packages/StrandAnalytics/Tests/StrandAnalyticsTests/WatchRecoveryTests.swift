@@ -17,8 +17,9 @@ final class WatchRecoveryTests: XCTestCase {
         let out = WatchRecovery.compute(todaySDNN: 45.0, todayRHR: 52,
                                         sdnnHistory: hist, rhrHistory: rhrHist)
         XCTAssertNotNil(out.recovery)
-        XCTAssertGreaterThanOrEqual(out.recovery!, 40)
-        XCTAssertLessThanOrEqual(out.recovery!, 60)
+        // Fork constants put a baseline night at ~69 (upstream ~58).
+        XCTAssertGreaterThanOrEqual(out.recovery!, 60)
+        XCTAssertLessThanOrEqual(out.recovery!, 75)
         XCTAssertEqual(out.confidence, .solid)
     }
 
@@ -146,7 +147,8 @@ final class WatchRecoveryTests: XCTestCase {
         XCTAssertEqual(withRHR.recovery!, hrvOnly.recovery!, accuracy: 1e-12)
         // The same literal the Kotlin twin pins, so the oracle guards BOTH directions: a Swift-side
         // drift would break here rather than silently diverging from Android.
-        XCTAssertEqual(withRHR.recovery!, 57.932425214874954, accuracy: 1e-12)
+        // Fork constants: 69.36841537221008 (upstream and the Kotlin twin pin 57.932425214874954).
+        XCTAssertEqual(withRHR.recovery!, 69.36841537221008, accuracy: 1e-12)
     }
 
     // An RHR history that is entirely out of physiological range accepts no night at all, so its

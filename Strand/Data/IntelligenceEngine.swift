@@ -592,6 +592,11 @@ final class IntelligenceEngine: ObservableObject {
     /// stages (`SleepStagerV2.Calibration.personal`) and Effort (`StrainScorer.Method.whoopCalibrated`).
     static let whoopCalibrationRescoreFlagKey = "intelligence.whoopCalibrationRescore.v1.done"
 
+    /// UserDefaults flag guarding the one-shot full-history rescore that (a) scores the WHOOP 5's unlabelled
+    /// legacy R-R (`WhoopStore.scoresUnlabelledWhoop5Legacy`: stages, HRV and Charge on 08-24 → 09-11) and
+    /// (b) moves Charge onto the fork's WHOOP-fitted `RecoveryScorer` constants.
+    static let legacyRRChargeRescoreFlagKey = "intelligence.legacyRRChargeRescore.v1.done"
+
     /// Set once a full-history rescore completes; the Apple Health write-back then reaches back to the first
     /// computed night once, so nights older than its rolling window are replaced too, and clears it.
     static let healthHistoryRewriteOwedKey = "noop.health.historyRewriteOwed.v1"
