@@ -1169,7 +1169,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     importedDeviceId = deviceId,
                     maxHROverride = profileStore.hrMaxOverride.takeIf { it > 0 }?.toDouble(),
                     flagGet = { NoopPrefs.restingHrRescoreDone(appContext) },
-                    flagSet = { NoopPrefs.setRestingHrRescoreDone(appContext) },
+                    flagSet = {
+                        NoopPrefs.setRestingHrRescoreDone(appContext)
+                        // Health Connect then replaces the resting HR it was given beyond its rolling window.
+                        NoopPrefs.setHcRestingHrRewriteOwed(appContext, true)
+                    },
                     // #1567: this rewrites the FULL history once, so a missing owner source would bake the
                     // WHOOP5 skin-temp scale into every day of it.
                     ownerSource = RegistryDayOwnerSource(noopApp.deviceRegistry),
