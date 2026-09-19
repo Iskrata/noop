@@ -1154,16 +1154,6 @@ class WhoopRepository(
         if (deviceIds.isEmpty()) emptyList()
         else mergeHrByTs(deviceIds.map { dao.hrSamples(it, from, to, limit) })
 
-    /**
-     * HR samples over every registered WHOOP plus canonical "my-whoop", deduped by timestamp with the
-     * active strap winning and archived straps retained for historical windows.
-     *
-     * #908: a strap re-added through the in-app device manager banks its LIVE raw under its OWN fresh id
-     * (e.g. "whoop-<uuid>"), NOT "my-whoop". A Today-curve / live-Effort read pinned to the hardcoded
-     * "my-whoop" then finds NOTHING and the day looks frozen (and Effort integrates to 0 off an empty
-     * series). Reading the union surfaces the re-added strap's live data AND the canonical import history.
-     * A single-WHOOP install resolves [activeDeviceId] to "my-whoop" ⇒ ONE id ⇒ byte-identical read.
-     */
     /** Count and newest timestamp of measured HR per source [hrSamplesUnion] reads, as one string: an
      *  index-only witness of whether a window's heart rate changed, without fetching a row. */
     suspend fun hrUnionFingerprint(activeDeviceId: String, from: Long, to: Long): String {
@@ -1174,6 +1164,16 @@ class WhoopRepository(
         return parts.joinToString(",")
     }
 
+    /**
+     * HR samples over every registered WHOOP plus canonical "my-whoop", deduped by timestamp with the
+     * active strap winning and archived straps retained for historical windows.
+     *
+     * #908: a strap re-added through the in-app device manager banks its LIVE raw under its OWN fresh id
+     * (e.g. "whoop-<uuid>"), NOT "my-whoop". A Today-curve / live-Effort read pinned to the hardcoded
+     * "my-whoop" then finds NOTHING and the day looks frozen (and Effort integrates to 0 off an empty
+     * series). Reading the union surfaces the re-added strap's live data AND the canonical import history.
+     * A single-WHOOP install resolves [activeDeviceId] to "my-whoop" ⇒ ONE id ⇒ byte-identical read.
+     */
     suspend fun hrSamplesUnion(activeDeviceId: String, from: Long, to: Long, limit: Int = DEFAULT_LIMIT):
         List<HrSample> = mergeHrByTs(rawWhoopSourceIds(activeDeviceId).map { dao.hrSamples(it, from, to, limit) })
 

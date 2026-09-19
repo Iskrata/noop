@@ -2514,6 +2514,10 @@ object IntelligenceEngine {
         return samples
     }
 
+    /** The sessions the sleep habits may learn from: those that ended before [before]. */
+    internal fun finishedSessions(sessions: List<SleepSession>, before: Long): List<SleepSession> =
+        sessions.filter { it.endTs < before }
+
     /**
      * Habitual midsleep (local seconds) AND the trailing per-night sleep DURATIONS (hours,
      * chronological) from the stored sessions over the window — the longest block per LOCAL day, so
@@ -2521,17 +2525,11 @@ object IntelligenceEngine {
      * sleep-need + regularity that thread into `analyzeDay` (Wave 0 · SL1/T1). The midsleep result is
      * byte-identical to before; the nightly-hours output is the extension. Mirrors Swift
      * `IntelligenceEngine.computeHabitualSleep`.
-     */
-    /** The sessions the sleep habits may learn from: those that ended before [before]. */
-    internal fun finishedSessions(sessions: List<SleepSession>, before: Long): List<SleepSession> =
-        sessions.filter { it.endTs < before }
-
-    /**
+     *
      * Only sessions that ended before [finishedBefore] (the pass's local midnight) are learned from. Tonight's
      * session is re-banked by every sync while it is still growing, and each time it moved the learned
      * consistency and midsleep, so the day-cache signature changed and every pass re-scored the whole window.
-     * A night still being slept joins the history the day after. Twin of the Swift
-     * `computeHabitualSleep(finishedBefore:)`.
+     * A night still being slept joins the history the day after (`computeHabitualSleep(finishedBefore:)`).
      */
     private suspend fun computeHabitualSleep(
         repo: WhoopRepository,
