@@ -18,6 +18,7 @@ struct StrandiOSApp: App {
     @UIApplicationDelegateAdaptor(HomeScreenQuickActionAppDelegate.self) private var appDelegate
     @StateObject private var model: AppModel
     private let incomingCallBuzz: IncomingCallBuzz
+    private let exitReasonMetrics: ExitReasonMetrics
     @StateObject private var health: HealthKitBridge
     /// The phone→watch link. Built + activated here so the watch app actually receives snapshots on a
     /// real device; without an owner that pushes it, the watch only ever shows placeholder data.
@@ -86,6 +87,9 @@ struct StrandiOSApp: App {
         _model = StateObject(wrappedValue: model)
         AppModel.current = model
         incomingCallBuzz = IncomingCallBuzz(buzz: { [weak model] in model?.buzz(loops: 2) })
+        exitReasonMetrics = ExitReasonMetrics(log: { [weak model] line in
+            Task { @MainActor in model?.live.append(log: line) }
+        })
         // Settings → "Keep screen on while syncing". Wired once here, not as another modifier on `body`.
         SyncKeepAwake.shared.attach(to: model.live)
         // The strap-sync Live Activity (Lock Screen + Dynamic Island). Same placement, same reason — and
