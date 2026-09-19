@@ -658,7 +658,7 @@ struct LiquidTodayView: View {
                         .foregroundStyle(StrandPalette.textTertiary)
                     Text(chargeDisplay.calibrationDetail ?? aiCoachingLine ?? synthLine)
                         .font(StrandFont.body).foregroundStyle(StrandPalette.textPrimary)
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, NoopMetrics.space2)
                 // One request per day, once Charge and Rest are both in (cached in the engine); re-run on a
