@@ -132,7 +132,7 @@ struct RootTabView: View {
             tab(todayTabRoot, "Today", "square.grid.2x2", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
             tab(ZonesView(), "Zones", "heart.circle", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
             tab(TrendsView(), "Trends", "chart.line.uptrend.xyaxis", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
-            tab(BiologyView(), "Biology", "drop.fill", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
+            tab(BiologyView(), "Lab", "drop.fill", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
             moreTab(path: $tabPaths[4], scrollSignal: scrollTop[4]).tag(4)
         }
         .tint(StrandPalette.accent)

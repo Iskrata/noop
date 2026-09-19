@@ -23,7 +23,7 @@ struct BiologyView: View {
     private static let excluded: Set<String> = [LabMarkerCategory.imaging.rawValue, LabMarkerCategory.appointmentNote.rawValue]
 
     var body: some View {
-        ScreenScaffold(title: "Biology", subtitle: "Your bloodwork, read from your own lab reports.",
+        ScreenScaffold(title: "Lab", subtitle: "Your bloodwork, read from your own lab reports.",
                        onRefresh: { await load() }, lazy: true, topBackground: liquidScaffoldSky()) {
             // Flat children, no wrapping VStack: the scaffold's LazyVStack (spacing 20) then builds each
             // header and card on demand as it scrolls in. Paddings restore the section/item rhythm.

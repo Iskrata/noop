@@ -13,7 +13,9 @@ struct CoachTipsCard: View {
     @State private var loading = false
 
     var body: some View {
-        Group {
+        // A VStack, not a Group: an empty Group has no view to appear, so its `.task` never ran and the card
+        // never loaded (the first build showed nothing on either screen). The stack exists even when empty.
+        VStack(spacing: 0) {
             if loading || tips?.isEmpty == false {
                 NoopCard {
                     VStack(alignment: .leading, spacing: 10) {
@@ -40,11 +42,13 @@ struct CoachTipsCard: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity)
         .task(id: id) {
             tips = nil
             loading = true
             tips = await load()
             loading = false
+            NSLog("Coach: tips card %@ -> %d tip(s)", id, tips?.count ?? -1)
         }
     }
 }
