@@ -18,7 +18,8 @@ struct BiologyHistoryChart: View {
     private var points: [Point] {
         marker.numeric.compactMap { row in
             guard let v = row.value, let date = BiologyHistoryChart.dayFormatter.date(from: row.day) else { return nil }
-            let range = LabReferenceRange.parse(row.referenceText) ?? (row.unit == marker.latest?.unit ? marker.range : nil)
+            let range = LabReferenceRange.parse(row.referenceText, sex: AICoachEngine.profileSex)
+                ?? (row.unit == marker.latest?.unit ? marker.range : nil)
             return Point(id: row.id, date: date, value: v, inRange: range.map { $0.status(v) == .inRange })
         }
     }

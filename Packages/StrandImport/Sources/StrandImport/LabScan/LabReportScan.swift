@@ -73,25 +73,39 @@ public enum LabReportScan {
         MarkerCatalog.builtIn.filter { $0.category == .bloodPanel || $0.category == .bloodPressure }
     }
 
-    public static var systemPrompt: String {
+    /// Every key the model may return in `catalogKey`: the catalog's scannable markers + the scan vocabulary.
+    static var pickableKeys: [String] { scannableCatalog.map(\.key) + LabScanVocabulary.all.map(\.key) }
+
+    /// `sex` ("male"/"female", from the profile) picks the right half of a sex-specific reference range.
+    public static func systemPrompt(sex: String) -> String {
         let keys = scannableCatalog.map { "\($0.key) = \($0.displayName) (\($0.canonicalUnit))" }.joined(separator: "\n")
+        let patient = sex.lowercased().hasPrefix("f") ? "female" : "male"
         return """
         You read photos of a medical laboratory report and extract every measured result. Some areas are \
         blacked out for privacy; ignore them. Never invent or estimate a value that is not printed.
         For each result row return:
         - name: the analyte name as printed (translate to English if the report is in another language, \
         keep the abbreviation, e.g. "White blood cells (WBC)").
-        - value: the result exactly as printed, including any "<" or ">" (e.g. "5.2", "<0.5", "negative").
+        - value: the result exactly as printed, every digit kept, including any "<" or ">" (e.g. "5.38", "<0.5", \
+        "negative"). SKIP a row whose result is "N/A", "-" or empty — never fill it in, and never copy a range \
+        or value from a neighbouring row.
+        Include EVERY result row on every page, down to the last rows of long tables (urine sediment, \
+        differential counts): a count row ("LYMPH", G/L) and its percentage row ("LYMPH%", %) are two results.
         - unit: the unit as printed, or null.
         - referenceLow / referenceHigh: the numeric bounds of the printed reference interval in the same unit, \
         null when a bound is absent.
-        - referenceText: the reference interval exactly as printed, or null.
+        - referenceText: the reference interval exactly as printed, or null. The patient is \(patient): when the \
+        report prints separate ranges for men and women, use the \(patient) one for referenceLow/referenceHigh and \
+        referenceText.
         - takenAt: the sample collection date as YYYY-MM-DD (else the report date), or null.
         - catalogKey: one of the keys below ONLY when the analyte is clearly the same measurement, else null. \
-        Use fasting_glucose for plasma/serum glucose, hba1c for glycated haemoglobin, vitamin_d for 25-OH vitamin D.
+        Use fasting_glucose for plasma/serum glucose, hba1c for glycated haemoglobin, vitamin_d for 25-OH vitamin D. \
+        White-cell differentials have a % key and a (count) key: pick by the row's unit. \
+        Urine tests: name them "Urine - <test>" and always return null.
         - confidence: "low" when any field was hard to read or you are unsure, otherwise "high".
         Catalog keys:
         \(keys)
+        \(LabScanVocabulary.promptLines)
         """
     }
 
@@ -114,7 +128,7 @@ public enum LabReportScan {
                 "referenceHigh": nullableNumber,
                 "referenceText": nullableString,
                 "takenAt": nullableString,
-                "catalogKey": ["anyOf": [["type": "string", "enum": scannableCatalog.map(\.key)], ["type": "null"]]],
+                "catalogKey": ["anyOf": [["type": "string", "enum": pickableKeys], ["type": "null"]]],
                 "confidence": ["type": "string", "enum": ["high", "low"]],
             ] as [String: Any],
         ]
@@ -139,8 +153,37 @@ public enum LabReportScan {
     /// only one of them can be saved under the natural key).
     public static func candidates(_ items: [LabScanItem]) -> [LabScanCandidate] {
         var out = items.enumerated().compactMap { candidate($1, id: "scan-\($0)") }
+        separateCollisions(&out)
         markDuplicates(&out)
         return out
+    }
+
+    /// Two rows of one scan landing on the same marker + day would overwrite each other on save (the natural
+    /// key): "LYMPH" (G/L) and "LYMPH %" both slugged to `custom_lymph` and the count was silently lost. An
+    /// exact repeat (overlapping pages) is dropped; a free-name custom row with a different value gets its own
+    /// unit-qualified key instead. Catalog / vocabulary collisions stay flagged as duplicates.
+    static func separateCollisions(_ rows: inout [LabScanCandidate]) {
+        var seen: [String: LabScanCandidate] = [:]
+        var keep: [LabScanCandidate] = []
+        func cell(_ r: LabScanCandidate) -> String { r.markerKey + "\u{1}" + (r.day ?? "") }
+        func same(_ a: LabScanCandidate, _ b: LabScanCandidate) -> Bool { a.valueInput == b.valueInput && a.unit == b.unit }
+        for var row in rows {
+            if let first = seen[cell(row)] {
+                if same(first, row) { continue }
+                let isFreeName = MarkerCatalog.definition(for: row.markerKey) == nil
+                    && LabScanVocabulary.analyte(for: row.markerKey) == nil
+                if isFreeName {
+                    let unitWord = row.unit.trimmingCharacters(in: .whitespaces) == "%" ? "pct" : row.unit
+                    let name = row.item.name.replacingOccurrences(of: "%", with: "")
+                    let qualified = LabMarkerCsvImport.customKey("\(name) \(unitWord)")
+                    if !qualified.isEmpty { row.markerKey = qualified }
+                    if let again = seen[cell(row)], same(again, row) { continue }
+                }
+            }
+            if seen[cell(row)] == nil { seen[cell(row)] = row }
+            keep.append(row)
+        }
+        rows = keep
     }
 
     /// Recompute the duplicate flag across the current rows (after a remap or delete).
@@ -166,7 +209,7 @@ public enum LabReportScan {
         let def = MarkerCatalog.definition(for: key)
         var flags: Set<LabScanFlag> = []
         if item.confidence?.lowercased() == "low" { flags.insert(.lowConfidence) }
-        if def == nil { flags.insert(.unmapped) }
+        if def == nil && LabScanVocabulary.analyte(for: key) == nil { flags.insert(.unmapped) }
 
         let printedUnit = (item.unit ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let parsed = parseValue(item.value)
@@ -177,13 +220,15 @@ public enum LabReportScan {
         var converted = false
 
         if let def, parsed.value != nil {
-            if let convert = LabUnitConversion.converter(unit: printedUnit, markerKey: key) {
+            if LabUnitConversion.isEquivalent(unit: printedUnit, markerKey: key) {
+                unit = def.canonicalUnit      // same quantity: keep the printed value and its precision
+            } else if let convert = LabUnitConversion.converter(unit: printedUnit, markerKey: key) {
                 let v = convert(parsed.value!)
                 valueInput = comparatorPrefix(valueInput) + format(v, decimals: def.decimals)
                 unit = def.canonicalUnit
                 low = low.map(convert)
                 high = high.map(convert)
-                converted = LabUnitConversion.normalize(printedUnit) != LabUnitConversion.normalize(def.canonicalUnit)
+                converted = true
             } else {
                 flags.insert(.unitNotConverted)
             }
@@ -210,12 +255,24 @@ public enum LabReportScan {
                                 day: day, flags: flags)
     }
 
-    /// The model's catalog pick when it names a real catalog key, else the Lab Book's name resolver
-    /// (catalog name / alias, or the same `custom_<slug>` key a hand-added marker gets).
+    /// The model's pick when it names a real catalog / vocabulary key, else the Lab Book's catalog name
+    /// resolver, else the scan vocabulary by alias, else the same `custom_<slug>` key a hand-added marker gets.
+    /// Urine tests never land on a blood marker.
     static func resolveKey(_ item: LabScanItem) -> String {
-        if let k = item.catalogKey, MarkerCatalog.definition(for: k) != nil { return k }
-        if let k = LabMarkerCsvImport.resolveMarker(item.name).key { return k }
+        let urine = LabScanVocabulary.isUrine(LabScanVocabulary.normalize(item.name))
+        if !urine, let k = item.catalogKey,
+           MarkerCatalog.definition(for: k) != nil || LabScanVocabulary.analyte(for: k) != nil { return k }
+        if !urine, let k = LabMarkerCsvImport.resolveMarker(item.name).key, MarkerCatalog.definition(for: k) != nil { return k }
+        if let k = LabScanVocabulary.resolve(name: item.name, unit: item.unit) { return k }
         return LabMarkerCsvImport.customKey(item.name)
+    }
+
+    /// The key an already-saved scanned reading should live under (its printed name from the note + unit),
+    /// or nil when it is already right — lets the app fold readings saved before the vocabulary existed.
+    public static func rekey(markerKey: String, reportName: String?, unit: String) -> String? {
+        guard markerKey.hasPrefix("custom_"), LabScanVocabulary.analyte(for: markerKey) == nil,
+              let reportName, let k = LabScanVocabulary.resolve(name: reportName, unit: unit), k != markerKey else { return nil }
+        return k
     }
 
     /// The marker's own `custom_<slug>` key (the reviewer chose "keep as its own marker").

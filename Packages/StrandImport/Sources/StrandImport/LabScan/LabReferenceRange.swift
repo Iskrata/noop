@@ -88,11 +88,25 @@ public struct LabReferenceRange: Equatable, Sendable {
         return nil
     }
 
+    /// `parse`, falling back to the half of a sex-specific range ("жени>1.68 мъже>1.45", "M: 13-17 F: 12-15")
+    /// that matches `sex` ("male"/"female").
+    public static func parse(_ text: String?, sex: String?) -> LabReferenceRange? {
+        if let plain = parse(text) { return plain }
+        guard let t = text?.lowercased(), let sex else { return nil }
+        let regex = sex.lowercased().hasPrefix("f") ? femaleLabel : maleLabel
+        guard let m = regex.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)),
+              let r = Range(m.range(at: 1), in: t) else { return nil }
+        return parse(String(t[r]))
+    }
+
     // Compiled once: `parse` runs for every marker card, so building these per call made scrolling lag.
     private static let num = "([0-9]+(?:[.,][0-9]+)?)"
     private static let twoSided = regex("^\(num)\\s*(?:-|–|—|to|\\.\\.)\\s*\(num)(?![0-9])")
     private static let upperOnly = regex("^(?:<=?|≤|up to|under|below)\\s*\(num)(?![0-9])")
     private static let lowerOnly = regex("^(?:>=?|≥|over|above)\\s*\(num)(?![0-9])")
+
+    private static let maleLabel = regex("(?<![\\p{L}])(?:мъже|мъж|men|male|m)\\s*[:=]?\\s*(.+)")
+    private static let femaleLabel = regex("(?<![\\p{L}])(?:жени|жена|women|female|f|w)\\s*[:=]?\\s*(.+)")
 
     private static func regex(_ pattern: String) -> NSRegularExpression {
         try! NSRegularExpression(pattern: pattern)

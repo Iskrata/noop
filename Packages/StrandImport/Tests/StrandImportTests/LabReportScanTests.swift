@@ -101,12 +101,12 @@ final class LabReportScanTests: XCTestCase {
     }
 
     func testUnknownMarkerKeepsItsOwnKeyUnderOther() throws {
-        let item = LabScanItem(name: "White blood cells (WBC)", value: "6.5", unit: "10^9/L", referenceLow: 4,
+        let item = LabScanItem(name: "Procalcitonin (PCT-Q)", value: "6.5", unit: "ng/mL", referenceLow: 4,
                                referenceHigh: 10, referenceText: "4.0 - 10.0", takenAt: "2026-09-01")
         let c = try XCTUnwrap(LabReportScan.candidate(item, id: "a"))
-        XCTAssertEqual(c.markerKey, "custom_white_blood_cells_wbc")
+        XCTAssertEqual(c.markerKey, "custom_procalcitonin_pct_q")
         XCTAssertEqual(c.category, .other)
-        XCTAssertEqual(c.unit, "10^9/L")
+        XCTAssertEqual(c.unit, "ng/mL")
         XCTAssertEqual(c.referenceText, "4.0 - 10.0")
         XCTAssertEqual(c.flags, [.unmapped])
     }
@@ -203,5 +203,100 @@ final class LabReportScanTests: XCTestCase {
         XCTAssertEqual(BiologyGroup.of("custom_total_protein"), .liver)
         XCTAssertEqual(BiologyGroup.of("custom_magnesium"), .vitamins)
         XCTAssertEqual(BiologyGroup.of("custom_something_else"), .other)
+    }
+
+    // MARK: - Scan vocabulary (the owner's 2023 + 2025 reports spelled the same tests differently)
+
+    func testBothReportSpellingsLandOnOneKey() {
+        let pairs: [(String, String?, String, String?, String)] = [
+            ("Basophils % (BASO %)", "%", "BASO %", "%", "custom_basophils_pct"),
+            ("Basophils (BASO)", "G/l", "BASO#", "G/L", "custom_basophils_abs"),
+            ("Neutrophils (NEUT, ANC)", "G/l", "NEUT (ANC)", "G/L", "custom_neutrophils_abs"),
+            ("Lymphocytes % (LYMPH %)", "%", "LYMPH %", "%", "custom_lymphocytes_pct"),
+            ("ESR (СУЕ)", "mm/h", "CYE", "mm/h", "custom_esr"),
+            ("Red blood cells (RBC)", "T/l", "Erythrocytes (RBC)", "T/l", "custom_rbc"),
+            ("PCT (plateletcrit)", "l/l", "PCT (тромбокрит)", "l/l", "custom_plateletcrit"),
+            ("RDW-CV", "%", "RDW-CV", "%", "custom_rdw_cv"),
+            ("Uric acid (пикочна киселина)", "µmol/L", "Uric acid", "µmol/L", "custom_uric_acid"),
+            ("Alkaline phosphatase (Алк. фосфатаза)", "U/L", "ALP", "U/L", "custom_alp"),
+        ]
+        for (a, ua, b, ub, key) in pairs {
+            XCTAssertEqual(LabScanVocabulary.resolve(name: a, unit: ua), key, a)
+            XCTAssertEqual(LabScanVocabulary.resolve(name: b, unit: ub), key, b)
+        }
+        XCTAssertEqual(LabScanVocabulary.resolve(name: "MCHC", unit: "g/l"), "custom_mchc")   // not MCH
+        XCTAssertNil(LabScanVocabulary.resolve(name: "Something exotic", unit: nil))
+    }
+
+    func testUrineNeverLandsOnABloodMarker() throws {
+        XCTAssertNil(LabScanVocabulary.resolve(name: "Urine - Leukocytes", unit: "WBC/µL"))
+        let glucose = LabScanItem(name: "Urine - Glucose", value: "norm", unit: "mmol/L", takenAt: "2025-09-16",
+                                  catalogKey: "fasting_glucose")
+        let c = try XCTUnwrap(LabReportScan.candidate(glucose, id: "u"))
+        XCTAssertEqual(c.markerKey, "custom_urine__glucose")
+        XCTAssertEqual(BiologyGroup.of(c.markerKey), .urine)
+        XCTAssertEqual(BiologyGroup.of("custom_urine_sediment__leukocytes"), .urine)
+    }
+
+    func testVocabularyKeysAreMappedNotFlagged() throws {
+        let item = LabScanItem(name: "WBC", value: "6.02", unit: "G/L", takenAt: "2025-09-16", catalogKey: "custom_wbc")
+        let c = try XCTUnwrap(LabReportScan.candidate(item, id: "w"))
+        XCTAssertEqual(c.markerKey, "custom_wbc")
+        XCTAssertFalse(c.flags.contains(.unmapped))
+        XCTAssertEqual(BiologyGroup.of("custom_wbc"), .bloodCount)
+        XCTAssertTrue(LabReportScan.pickableKeys.contains("custom_eosinophils_pct"))
+    }
+
+    func testSavedFreeNameReadingsAreRekeyed() {
+        XCTAssertEqual(LabReportScan.rekey(markerKey: "custom_basophils__baso", reportName: "Basophils % (BASO %)", unit: "%"),
+                       "custom_basophils_pct")
+        XCTAssertEqual(LabReportScan.rekey(markerKey: "custom_cye", reportName: "CYE", unit: "mm/h"), "custom_esr")
+        XCTAssertNil(LabReportScan.rekey(markerKey: "custom_esr", reportName: "ESR", unit: "mm/h"))       // already stable
+        XCTAssertNil(LabReportScan.rekey(markerKey: "hdl", reportName: "HDL-C", unit: "mmol/L"))          // catalog key
+        XCTAssertNil(LabReportScan.rekey(markerKey: "custom_urine__ph", reportName: "Urine - pH", unit: ""))
+    }
+
+    func testSexSpecificRangePicksTheProfileHalf() {
+        let text = "жени>1.68 мъже>1.45"
+        XCTAssertNil(LabReferenceRange.parse(text))
+        XCTAssertEqual(LabReferenceRange.parse(text, sex: "male"), LabReferenceRange(low: 1.45, high: nil))
+        XCTAssertEqual(LabReferenceRange.parse(text, sex: "female"), LabReferenceRange(low: 1.68, high: nil))
+        XCTAssertEqual(LabReferenceRange.parse("M: 13-17 F: 12-15", sex: "male"), LabReferenceRange(low: 13, high: 17))
+        XCTAssertEqual(LabReferenceRange.parse("3 - 5", sex: "male"), LabReferenceRange(low: 3, high: 5))
+    }
+
+    func testPromptCarriesSexAndVocabulary() {
+        let prompt = LabReportScan.systemPrompt(sex: "male")
+        XCTAssertTrue(prompt.contains("The patient is male"))
+        XCTAssertTrue(prompt.contains("custom_basophils_pct = Basophils %"))
+        XCTAssertTrue(LabReportScan.systemPrompt(sex: "female").contains("The patient is female"))
+    }
+
+    // MARK: - Checked against the owner's real reports
+
+    func testSameUnitValuesKeepPrintedPrecision() throws {
+        let crp = LabScanItem(name: "CRP - quantitative", value: "2.13", unit: "mg/L", takenAt: "2023-07-05", catalogKey: "crp")
+        XCTAssertEqual(LabReportScan.candidate(crp, id: "c")?.valueInput, "2.13")      // was re-rounded to 2.1
+        let glucose = LabScanItem(name: "Glucose", value: "5.38", unit: "mmol/L", takenAt: "2025-09-16", catalogKey: "fasting_glucose")
+        XCTAssertEqual(LabReportScan.candidate(glucose, id: "g")?.valueInput, "5.38")  // was 5.4
+        let alt = LabScanItem(name: "ALT", value: "15", unit: "IU/L", takenAt: "2023-07-05", catalogKey: "alt")
+        let c = try XCTUnwrap(LabReportScan.candidate(alt, id: "a"))
+        XCTAssertEqual(c.valueInput, "15")
+        XCTAssertEqual(c.unit, "U/L")
+    }
+
+    func testCountAndPercentRowsNeverOverwriteEachOther() {
+        let rows = LabReportScan.candidates([
+            LabScanItem(name: "FOO", value: "2.4", unit: "G/L", takenAt: "2025-09-16"),
+            LabScanItem(name: "FOO %", value: "39.9", unit: "%", takenAt: "2025-09-16"),
+            LabScanItem(name: "FOO %", value: "39.9", unit: "%", takenAt: "2025-09-16"),   // overlapping page repeat
+        ])
+        XCTAssertEqual(rows.map(\.markerKey), ["custom_foo", "custom_foo_pct"])
+        XCTAssertFalse(rows.contains { $0.flags.contains(.duplicate) })
+        let lymph = LabReportScan.candidates([
+            LabScanItem(name: "LYMPH", value: "2.4", unit: "G/L", takenAt: "2025-09-16"),
+            LabScanItem(name: "LYMPH%", value: "39.9", unit: "%", takenAt: "2025-09-16"),
+        ])
+        XCTAssertEqual(lymph.map(\.markerKey), ["custom_lymphocytes_abs", "custom_lymphocytes_pct"])
     }
 }

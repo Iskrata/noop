@@ -10,8 +10,9 @@ import Foundation
 // Pure and deterministic.
 
 public enum BiologyGroup: String, CaseIterable, Sendable {
-    case heart, metabolic, bloodCount, iron, vitamins, hormones, inflammation, kidney, liver, electrolytes,
-         bloodPressure, body, other
+    // Declaration order is the Biology screen's section order (hormones first — the owner's pick).
+    case hormones, heart, metabolic, bloodCount, iron, vitamins, inflammation, kidney, liver, electrolytes,
+         urine, bloodPressure, body, other
 
     public var displayName: String {
         switch self {
@@ -25,6 +26,7 @@ public enum BiologyGroup: String, CaseIterable, Sendable {
         case .kidney:        return "Kidney"
         case .liver:         return "Liver"
         case .electrolytes:  return "Electrolytes"
+        case .urine:         return "Urine"
         case .bloodPressure: return "Blood pressure"
         case .body:          return "Body"
         case .other:         return "Other"
@@ -43,6 +45,7 @@ public enum BiologyGroup: String, CaseIterable, Sendable {
         case .kidney:        return "drop.triangle.fill"
         case .liver:         return "cross.vial.fill"
         case .electrolytes:  return "bolt.fill"
+        case .urine:         return "testtube.2"
         case .bloodPressure: return "heart.text.square.fill"
         case .body:          return "figure.stand"
         case .other:         return "square.grid.2x2.fill"
@@ -90,6 +93,9 @@ public enum BiologyGroup: String, CaseIterable, Sendable {
     /// The group a marker key belongs to.
     public static func of(_ markerKey: String) -> BiologyGroup {
         if let g = catalog[markerKey] { return g }
+        if let analyte = LabScanVocabulary.analyte(for: markerKey) { return analyte.group }
+        // Urine first: its leukocytes / glucose / protein must not fall into the blood groups below.
+        if LabScanVocabulary.isUrine(markerKey.lowercased()) { return .urine }
         let words = Set(markerKey.lowercased().split(separator: "_").map(String.init))
         let joined = markerKey.lowercased()
         for (group, keys) in keywords {

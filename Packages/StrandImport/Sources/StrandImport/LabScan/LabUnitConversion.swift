@@ -76,6 +76,14 @@ public enum LabUnitConversion {
         return factors[markerKey]?[from]
     }
 
+    /// True when `unit` already IS the canonical unit (or a same-quantity synonym): no conversion, so the printed
+    /// value must be kept exactly as printed — re-rounding it to the catalog's decimals turned CRP 2.13 into 2.1.
+    public static func isEquivalent(unit: String, markerKey: String) -> Bool {
+        guard let def = MarkerCatalog.definition(for: markerKey) else { return false }
+        let from = normalize(unit), canonical = normalize(def.canonicalUnit)
+        return !from.isEmpty && (from == canonical || synonyms[canonical]?.contains(from) == true)
+    }
+
     /// `value` in `markerKey`'s canonical unit, or nil when no conversion is known.
     public static func toCanonical(_ value: Double, unit: String, markerKey: String) -> Double? {
         converter(unit: unit, markerKey: markerKey).map { $0(value) }

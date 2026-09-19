@@ -25,6 +25,9 @@ extension AICoachEngine {
     /// mini): results are saved without a review step, so reading accuracy matters more than cost.
     static let labScanModel = "gpt-5"
 
+    /// The profile's sex (`Profile.sex`, default male) — picks the right half of sex-specific lab ranges.
+    static var profileSex: String { UserDefaults.standard.string(forKey: "profile.sex") ?? "male" }
+
     var labScanGate: LabScanGate {
         guard CoachBriefScheduler.coachMasterEnabled else { return .aiOff }
         guard provider == .openAI else { return .notOpenAI }
@@ -42,7 +45,7 @@ extension AICoachEngine {
               jpegPages.reduce(0) { $0 + $1.count } / 1024, Self.labScanModel)
         let json = try await OpenAIClient().extractJSON(
             key: key, model: Self.labScanModel,
-            systemPrompt: LabReportScan.systemPrompt, prompt: LabReportScan.userPrompt,
+            systemPrompt: LabReportScan.systemPrompt(sex: Self.profileSex), prompt: LabReportScan.userPrompt,
             jpegImages: jpegPages, schemaName: LabReportScan.schemaName, schema: LabReportScan.jsonSchema,
             session: session)
         let items = try LabReportScan.decode(json)

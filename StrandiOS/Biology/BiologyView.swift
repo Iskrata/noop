@@ -66,12 +66,13 @@ struct BiologyView: View {
     }
 
     private func load() async {
-        guard let all = await LabBookView.loadAll(repo) else { return }
+        guard var all = await LabBookView.loadAll(repo) else { return }
+        if await LabScanRekey.run(all, repo: repo), let reloaded = await LabBookView.loadAll(repo) { all = reloaded }
         let rows = all.filter { !Self.excluded.contains($0.category) }
         // Every strap sync bumps refreshSeq; rebuilding identical cards then is a visible hitch.
         guard !loaded || rows != loadedRows else { return }
         loadedRows = rows
-        let built = BiologyMarker.build(rows)
+        let built = BiologyMarker.build(rows, sex: AICoachEngine.profileSex)
         let byGroup = Dictionary(grouping: built, by: \.group)
         groups = BiologyGroup.allCases.compactMap { g in byGroup[g].map { (g, $0) } }
         markers = built

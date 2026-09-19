@@ -7,6 +7,7 @@ import WhoopStore
 enum BiologyNames {
     static func name(for key: String, reportName: String?) -> String {
         if let def = MarkerCatalog.definition(for: key) { return def.displayName }
+        if let analyte = LabScanVocabulary.analyte(for: key) { return analyte.displayName }
         if let reportName, !reportName.isEmpty { return reportName }
         return LabBookView.humanise(key.hasPrefix("custom_") ? String(key.dropFirst("custom_".count)) : key)
     }
@@ -38,7 +39,7 @@ struct BiologyMarker: Identifiable {
 
     var id: String { key }
 
-    init(key: String, name: String, group: BiologyGroup, readings: [LabMarkerRow]) {
+    init(key: String, name: String, group: BiologyGroup, readings: [LabMarkerRow], sex: String) {
         self.key = key
         self.name = name
         self.group = group
@@ -48,9 +49,9 @@ struct BiologyMarker: Identifiable {
         numeric = readings.filter { $0.value != nil }
         numericValues = numeric.compactMap(\.value)
         let range: LabReferenceRange? = latest.flatMap { latest in
-            LabReferenceRange.parse(latest.referenceText) ?? readings.reversed()
+            LabReferenceRange.parse(latest.referenceText, sex: sex) ?? readings.reversed()
                 .filter { $0.unit == latest.unit }
-                .lazy.compactMap { LabReferenceRange.parse($0.referenceText) }.first
+                .lazy.compactMap { LabReferenceRange.parse($0.referenceText, sex: sex) }.first
         }
         self.range = range
         status = latest?.value.flatMap { v in range?.status(v) }
@@ -65,11 +66,11 @@ struct BiologyMarker: Identifiable {
     }
 
     /// Group every reading by marker key.
-    static func build(_ rows: [LabMarkerRow]) -> [BiologyMarker] {
+    static func build(_ rows: [LabMarkerRow], sex: String) -> [BiologyMarker] {
         Dictionary(grouping: rows, by: \.markerKey).map { key, readings in
             let sorted = readings.sorted { $0.takenAt < $1.takenAt }
             return BiologyMarker(key: key, name: BiologyNames.name(for: key, readings: sorted),
-                                 group: BiologyGroup.of(key), readings: sorted)
+                                 group: BiologyGroup.of(key), readings: sorted, sex: sex)
         }
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
