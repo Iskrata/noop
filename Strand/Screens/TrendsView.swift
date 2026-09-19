@@ -71,15 +71,8 @@ struct TrendsView: View {
     @AppStorage(UnitPrefs.trendChartStyleKey) private var trendChartStyleRaw = TrendChartStyle.line.rawValue
     private var effortScale: EffortScale { UnitPrefs.resolveEffortScale(effortScaleRaw) }
 
-    // yyyy-MM-dd → Date (en_US_POSIX, UTC), per task spec.
-    private static let dayParser: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "UTC")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
-    private func date(_ day: String) -> Date? { Self.dayParser.date(from: day) }
+    // yyyy-MM-dd → Date (en_US_POSIX, UTC), per task spec. Memoized: the body parses one per day.
+    private func date(_ day: String) -> Date? { DayKeyDates.utc(day) }
 
     // MARK: Window selection (relative to the LATEST day, with auto-expand)
 

@@ -10,15 +10,6 @@ import WhoopStore
 /// was tuned. `TrendsView.resolve` calls this too.
 enum HostedTrendData {
 
-    /// Day strings are banked as `yyyy-MM-dd` in UTC; parsing them any other way shifts every point.
-    private static let dayParser: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "UTC")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
-
     /// The metric's points for the smallest window at or wider than `selected` that holds any data,
     /// and the window it settled on.
     ///
@@ -61,7 +52,8 @@ enum HostedTrendData {
 
     private static func points(_ days: [DailyMetric], _ value: (DailyMetric) -> Double?) -> [TrendPoint] {
         days.compactMap { d in
-            guard let v = value(d), let dt = dayParser.date(from: d.day) else { return nil }
+            // Day strings are banked as `yyyy-MM-dd` in UTC; parsing them any other way shifts every point.
+            guard let v = value(d), let dt = DayKeyDates.utc(d.day) else { return nil }
             return TrendPoint(date: dt, value: v)
         }
     }

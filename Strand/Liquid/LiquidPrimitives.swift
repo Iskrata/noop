@@ -242,6 +242,31 @@ enum LiquidRender {
 
 // MARK: - Views
 
+/// Tracks whether a live liquid surface is inside its scroll view's viewport, so its frame clock can stand
+/// down while it is scrolled out of sight.
+///
+/// A `TimelineView(.animation)` keeps ticking after its view has scrolled out of the viewport: SwiftUI
+/// does not pause it. Today's live surfaces (the three 60 fps hero vessels and the 60 fps heart-rate
+/// thread) kept costing the same main-thread time with the whole column scrolled past them, which is
+/// exactly when the wearer is scrolling the cards below and needs the frames. Measured on the Mac
+/// harness over the real store (430×900 window, scores shown): Today idle and scrolled to the bottom went
+/// from ~47% of a main-thread core to ~1%. Pausing freezes a picture nobody is looking at; the clock
+/// resumes as soon as any of the view scrolls back in, and `LiquidSim.step` clamps the elapsed time, so
+/// the fluid carries on rather than jumping.
+///
+/// `onScrollVisibilityChange` needs iOS 18 / macOS 15; below that the surface animates as before.
+struct LiquidOnScreen: ViewModifier {
+    @Binding var onScreen: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, macOS 15.0, *) {
+            content.onScrollVisibilityChange(threshold: 0.01) { onScreen = $0 }
+        } else {
+            content
+        }
+    }
+}
+
 /// Applies the splash tap either as a normal tap (consuming it) or as a simultaneous gesture (sharing
 /// it with whatever wraps the view).
 ///
@@ -280,6 +305,7 @@ struct LiquidVessel: View {
     @ObservedObject private var motion = NoopMotionState.shared
     @State private var sim: LiquidSim
     @State private var splashes = 0
+    @State private var onScreen = true
 
     // The custom init exists to seed `_sim` from `value`, which also means the memberwise init is NOT
     // synthesised: any new stored property has to be threaded through here or callers cannot pass it.
@@ -299,17 +325,21 @@ struct LiquidVessel: View {
         // 60fps: on the 120Hz ProMotion panel a 30fps cap updated the fluid only every 4th refresh,
         // which read as juddery slosh. Only the 3 hero gauges + HR thread run live now (the small ones
         // are static), so the higher rate is affordable and the liquid actually flows.
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { tl in
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !onScreen)) { tl in
             let now = liquidSeconds(tl.date)
-            Canvas { context, size in
-                sim.step(now: now, tilt: LiquidMotion.shared.tilt, target: value ?? 0)
-                LiquidRender.vessel(context, size, sim, now: now, tint: tint)
+            // Step on main, draw a frozen copy: the canvas renders off the main thread, and the splash tap
+            // mutates `sim` on main, so the renderer must never read the live instance.
+            let _ = sim.step(now: now, tilt: LiquidMotion.shared.tilt, target: value ?? 0)
+            let frame = sim.snapshot()
+            Canvas(rendersAsynchronously: true) { context, size in
+                LiquidRender.vessel(context, size, frame, now: now, tint: tint)
             }
         }
         .aspectRatio(1, contentMode: .fit)
         .contentShape(Circle())
         .modifier(LiquidSplashTap(passesThrough: tapPassesThrough) { sim.splash(12); splashes &+= 1 })
         .liquidTapHaptic(trigger: splashes)   // light tap feedback (guarded so the primitives compile on macOS 13)
+        .modifier(LiquidOnScreen(onScreen: $onScreen))
         .onAppear { LiquidMotion.shared.acquire() }
         .onDisappear { LiquidMotion.shared.release() }
     }
@@ -339,13 +369,14 @@ struct LiquidTube: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var motion = NoopMotionState.shared
     @State private var sim = LiquidSim(target: 0)
+    @State private var onScreen = true
 
     var body: some View {
         if animated && !motion.poseStill(reduceMotion) { liveTube } else { staticTube }
     }
 
     private var liveTube: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !onScreen)) { tl in
             let now = liquidSeconds(tl.date)
             Canvas { context, size in
                 sim.step(now: now, tilt: LiquidMotion.shared.tilt, target: frac)
@@ -355,6 +386,7 @@ struct LiquidTube: View {
             }
         }
         .frame(height: height)
+        .modifier(LiquidOnScreen(onScreen: $onScreen))
         .onAppear { LiquidMotion.shared.acquire() }
         .onDisappear { LiquidMotion.shared.release() }
     }
@@ -382,19 +414,22 @@ struct LiquidThread: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var motion = NoopMotionState.shared
+    @State private var onScreen = true
 
     var body: some View {
         if animated && !motion.poseStill(reduceMotion) { liveThread } else { staticThread }
     }
 
     private var liveThread: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { tl in   // 60fps to flow smoothly on ProMotion
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !onScreen)) { tl in   // 60fps to flow smoothly on ProMotion
             let now = liquidSeconds(tl.date)
-            Canvas { context, size in
+            // Pure over its captured values, so it can render off the main thread.
+            Canvas(rendersAsynchronously: true) { context, size in
                 LiquidRender.thread(context, size, values: bpm, now: now, tint: tint, segments: segments)
             }
         }
         .frame(height: height)
+        .modifier(LiquidOnScreen(onScreen: $onScreen))
     }
 
     /// One-shot render (no travelling glint / pulse) — used until first data load settles.
