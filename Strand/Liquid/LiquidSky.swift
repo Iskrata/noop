@@ -75,6 +75,76 @@ private let liquidStars: [LiquidStar] = (0..<70).map { _ in
                ph: .random(in: 0..<7), sp: 0.2 + .random(in: 0..<0.5))
 }
 
+/// The sky's paint, one function per layer, shared by the live `LiquidSky` and `LiquidSkyStatic` so the
+/// two can never draw a different picture. Each layer is a single fill, and the layers are always
+/// composited in this order: base → breath → warm → stars → settle.
+enum LiquidSkyPaint {
+    /// The theme's canvas colour (`surfaceBase`) the sky dissolves into, so there is no hard seam where
+    /// the sky meets the page — light mode made this glaring.
+    static func settleColor(dark: Bool) -> Color {
+        Color(.sRGB,
+              red: dark ? 29.0 / 255.0 : 242.0 / 255.0,
+              green: dark ? 30.0 / 255.0 : 242.0 / 255.0,
+              blue: dark ? 35.0 / 255.0 : 247.0 / 255.0,
+              opacity: 1)
+    }
+
+    /// The gradient IS the scene.
+    static func base(_ ctx: GraphicsContext, _ size: CGSize, top: Color, mid: Color, hor: Color) {
+        ctx.fill(Path(CGRect(x: 0, y: 0, width: size.width, height: size.height)),
+                 with: .linearGradient(Gradient(stops: [
+                    .init(color: top, location: 0),
+                    .init(color: mid, location: 0.5),
+                    .init(color: hor, location: 0.9)]),
+                                       startPoint: CGPoint(x: 0, y: 0), endPoint: CGPoint(x: 0, y: size.height)))
+    }
+
+    /// The slow breath of light low in the sky, at FULL strength (end stop opacity 1). The live sky
+    /// scales the whole layer with `.opacity(0.05 + breathe * 0.03)`; gradient alpha is linear in the
+    /// stop, so that is the same pixel as painting the end stop at that opacity directly.
+    static func breath(_ ctx: GraphicsContext, _ size: CGSize) {
+        let w = size.width, h = size.height
+        ctx.fill(Path(CGRect(x: 0, y: h * 0.45, width: w, height: h * 0.55)),
+                 with: .linearGradient(Gradient(colors: [.white.opacity(0), .white]),
+                                       startPoint: CGPoint(x: 0, y: h * 0.45), endPoint: CGPoint(x: 0, y: h)))
+    }
+
+    static func warm(_ ctx: GraphicsContext, _ size: CGSize, amount: Double) {
+        let w = size.width, h = size.height
+        let warm = Color(.sRGB, red: 1, green: 200/255, blue: 120/255, opacity: 1)
+        ctx.fill(Path(CGRect(x: 0, y: h * 0.55, width: w, height: h * 0.45)),
+                 with: .linearGradient(Gradient(colors: [warm.opacity(0), warm.opacity(amount * 0.10)]),
+                                       startPoint: CGPoint(x: 0, y: h * 0.55), endPoint: CGPoint(x: 0, y: h)))
+    }
+
+    /// The star field. `now` nil poses every star at its resting brightness (no twinkle).
+    static func stars(_ ctx: GraphicsContext, _ size: CGSize, amount: Double, now: Double?) {
+        let w = size.width, h = size.height
+        for s in liquidStars {
+            let baseA = 0.04 + s.z * 0.16
+            let tw = now.map { pow(max(0, sin(s.ph + $0 * s.sp)), 6) } ?? 0
+            let o = amount * (baseA + tw * 0.28)
+            if o < 0.02 { continue }
+            let sz = 0.6 + s.z * 0.8
+            ctx.fill(Path(CGRect(x: s.x * w, y: s.y * h, width: sz, height: sz)), with: .color(.white.opacity(o)))
+        }
+    }
+
+    /// Settle into the page: a long fade to the theme's surfaceBase over the lower half so the sky
+    /// dissolves seamlessly into the body — no hard cut (the light-mode dark→white slam is gone).
+    static func settle(_ ctx: GraphicsContext, _ size: CGSize, color: Color, strength: Double) {
+        let w = size.width, h = size.height
+        ctx.fill(Path(CGRect(x: 0, y: h * 0.45, width: w, height: h * 0.55)),
+                 with: .linearGradient(Gradient(colors: [color.opacity(0), color.opacity(strength)]),
+                                       startPoint: CGPoint(x: 0, y: h * 0.45), endPoint: CGPoint(x: 0, y: h)))
+    }
+
+    static func liveHour(_ date: Date = Date()) -> Double {
+        let c = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return Double(c.hour ?? 0) + Double(c.minute ?? 0) / 60
+    }
+}
+
 struct LiquidSky: View {
     /// Hour of day 0...24. Defaults to live time when nil.
     var hour: Double?
@@ -87,70 +157,60 @@ struct LiquidSky: View {
     /// frame loop stand down from inside, so the gate travels with the view.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var motion = NoopMotionState.shared
+    /// The breath's clock. Its opacity swings by 0.03 over a ~28.6 s period (`sin(now * 0.22)`), so it
+    /// moves at most 0.03 × 0.5 × 0.22 ≈ 0.0033 alpha per second: one 2 fps step is under half of one
+    /// 8-bit level (1/255 ≈ 0.0039). Ticking it at the stars' 20 fps repainted pixels that could not
+    /// change; 2 fps is the same picture.
+    private static let breathInterval = 1.0 / 2.0
+    /// The twinkle's clock, unchanged from the single-canvas sky.
+    private static let starsInterval = 1.0 / 20.0
 
+    // PERF: the scene is stacked layers, composited in the exact order the old single Canvas filled
+    // them, so the picture is the same. Only the two layers that move sit under a clock. Repainting the
+    // whole sky 20 times a second (four full-screen gradients) cost about as much main-thread time as the
+    // 60 fps heart-rate thread, for a daytime change of three hundredths of opacity. Now the static layers
+    // paint once a minute, the breath re-composites a cached layer by opacity, and the stars (absent by
+    // day: no daytime keyframe carries any) keep their 20 fps twinkle and render off the main thread.
+    // Mac harness, full-window sky over the real store: by day ~9% of a main-thread core → under 1%;
+    // at night unchanged (~9%).
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20.0,
-                                paused: motion.poseStill(reduceMotion))) { tl in
-            let now = liquidSeconds(tl.date)
-            let h = hour ?? liveHour()
-            // The sky must dissolve into the SAME canvas colour the body uses (theme-aware surfaceBase),
-            // so there is no hard seam where the sky meets the page — light mode made this glaring.
+        // The live hour moves once a minute, so the layers that depend on it repaint once a minute.
+        TimelineView(.everyMinute) { _ in
             let dark = scheme == .dark
-            let settle = Color(.sRGB,
-                               red: dark ? 29.0 / 255.0 : 242.0 / 255.0,
-                               green: dark ? 30.0 / 255.0 : 242.0 / 255.0,
-                               blue: dark ? 35.0 / 255.0 : 247.0 / 255.0,
-                               opacity: 1)
-            Canvas { ctx, size in
-                render(ctx, size, hour: h, now: now, settle: settle, light: !dark)
+            let S = liquidSkyAt(hour ?? LiquidSkyPaint.liveHour(), light: !dark)
+            let settle = LiquidSkyPaint.settleColor(dark: dark)
+            let paused = motion.poseStill(reduceMotion)
+            ZStack {
+                Canvas { ctx, size in LiquidSkyPaint.base(ctx, size, top: S.top, mid: S.mid, hor: S.hor) }
+                TimelineView(.animation(minimumInterval: Self.breathInterval, paused: paused)) { tl in
+                    let breathe = 0.5 + 0.5 * sin(liquidSeconds(tl.date) * 0.22)
+                    LiquidSkyBreathLayer().opacity(0.05 + breathe * 0.03)
+                }
+                if S.warm > 0.01 {
+                    Canvas { ctx, size in LiquidSkyPaint.warm(ctx, size, amount: S.warm) }
+                }
+                if S.stars > 0.01 {
+                    TimelineView(.animation(minimumInterval: Self.starsInterval, paused: paused)) { tl in
+                        let now = liquidSeconds(tl.date)
+                        // Pure over its captured values, so it can render off the main thread.
+                        Canvas(rendersAsynchronously: true) { ctx, size in
+                            LiquidSkyPaint.stars(ctx, size, amount: S.stars, now: now)
+                        }
+                    }
+                }
+                Canvas { ctx, size in
+                    LiquidSkyPaint.settle(ctx, size, color: settle, strength: settleStrength)
+                }
             }
         }
     }
+}
 
-    private func liveHour() -> Double {
-        let c = Calendar.current.dateComponents([.hour, .minute], from: Date())
-        return Double(c.hour ?? 0) + Double(c.minute ?? 0) / 60
-    }
-
-    private func render(_ base: GraphicsContext, _ size: CGSize, hour: Double, now: Double,
-                        settle: Color, light: Bool) {
-        let S = liquidSkyAt(hour, light: light)
-        let w = size.width, h = size.height
-        var ctx = base
-        // the gradient IS the scene
-        ctx.fill(Path(CGRect(x: 0, y: 0, width: w, height: h)),
-                 with: .linearGradient(Gradient(stops: [
-                    .init(color: S.top, location: 0),
-                    .init(color: S.mid, location: 0.5),
-                    .init(color: S.hor, location: 0.9)]),
-                                       startPoint: CGPoint(x: 0, y: 0), endPoint: CGPoint(x: 0, y: h)))
-        // slow breath of light low in the sky
-        let breathe = 0.5 + 0.5 * sin(now * 0.22)
-        ctx.fill(Path(CGRect(x: 0, y: h * 0.45, width: w, height: h * 0.55)),
-                 with: .linearGradient(Gradient(colors: [.white.opacity(0), .white.opacity(0.05 + breathe * 0.03)]),
-                                       startPoint: CGPoint(x: 0, y: h * 0.45), endPoint: CGPoint(x: 0, y: h)))
-        if S.warm > 0.01 {
-            let warm = Color(.sRGB, red: 1, green: 200/255, blue: 120/255, opacity: 1)
-            ctx.fill(Path(CGRect(x: 0, y: h * 0.55, width: w, height: h * 0.45)),
-                     with: .linearGradient(Gradient(colors: [warm.opacity(0), warm.opacity(S.warm * 0.10)]),
-                                           startPoint: CGPoint(x: 0, y: h * 0.55), endPoint: CGPoint(x: 0, y: h)))
-        }
-        // stars
-        if S.stars > 0.01 {
-            for s in liquidStars {
-                let baseA = 0.04 + s.z * 0.16
-                let tw = pow(max(0, sin(s.ph + now * s.sp)), 6)
-                let o = S.stars * (baseA + tw * 0.28)
-                if o < 0.02 { continue }
-                let sz = 0.6 + s.z * 0.8
-                ctx.fill(Path(CGRect(x: s.x * w, y: s.y * h, width: sz, height: sz)), with: .color(.white.opacity(o)))
-            }
-        }
-        // Settle into the page: a long fade to the theme's surfaceBase over the lower half so the sky
-        // dissolves seamlessly into the body — no hard cut (the light-mode dark→white slam is gone).
-        ctx.fill(Path(CGRect(x: 0, y: h * 0.45, width: w, height: h * 0.55)),
-                 with: .linearGradient(Gradient(colors: [settle.opacity(0), settle.opacity(settleStrength)]),
-                                       startPoint: CGPoint(x: 0, y: h * 0.45), endPoint: CGPoint(x: 0, y: h)))
+/// The breath sheet at full strength. A separate view with no inputs, so the clock above it changes only
+/// its opacity and never re-runs this paint.
+private struct LiquidSkyBreathLayer: View {
+    var body: some View {
+        Canvas { ctx, size in LiquidSkyPaint.breath(ctx, size) }
     }
 }
 
@@ -208,39 +268,14 @@ struct LiquidSkyStatic: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let h = hour ?? liveHour()
+        let h = hour ?? LiquidSkyPaint.liveHour()
         let dark = scheme == .dark
-        let settle = Color(.sRGB,
-                           red: dark ? 29.0 / 255.0 : 242.0 / 255.0,
-                           green: dark ? 30.0 / 255.0 : 242.0 / 255.0,
-                           blue: dark ? 35.0 / 255.0 : 247.0 / 255.0,
-                           opacity: 1)
+        let settle = LiquidSkyPaint.settleColor(dark: dark)
         Canvas { ctx, size in
             let S = liquidSkyAt(h, light: !dark)
-            let w = size.width, hh = size.height
-            ctx.fill(Path(CGRect(x: 0, y: 0, width: w, height: hh)),
-                     with: .linearGradient(Gradient(stops: [
-                        .init(color: S.top, location: 0),
-                        .init(color: S.mid, location: 0.5),
-                        .init(color: S.hor, location: 0.9)]),
-                                           startPoint: CGPoint(x: 0, y: 0), endPoint: CGPoint(x: 0, y: hh)))
-            if S.stars > 0.01 {
-                for s in liquidStars {
-                    let o = S.stars * (0.04 + s.z * 0.16)
-                    if o < 0.02 { continue }
-                    let sz = 0.6 + s.z * 0.8
-                    ctx.fill(Path(CGRect(x: s.x * w, y: s.y * hh, width: sz, height: sz)),
-                             with: .color(.white.opacity(o)))
-                }
-            }
-            ctx.fill(Path(CGRect(x: 0, y: hh * 0.45, width: w, height: hh * 0.55)),
-                     with: .linearGradient(Gradient(colors: [settle.opacity(0), settle.opacity(settleStrength)]),
-                                           startPoint: CGPoint(x: 0, y: hh * 0.45), endPoint: CGPoint(x: 0, y: hh)))
+            LiquidSkyPaint.base(ctx, size, top: S.top, mid: S.mid, hor: S.hor)
+            if S.stars > 0.01 { LiquidSkyPaint.stars(ctx, size, amount: S.stars, now: nil) }
+            LiquidSkyPaint.settle(ctx, size, color: settle, strength: settleStrength)
         }
-    }
-
-    private func liveHour() -> Double {
-        let c = Calendar.current.dateComponents([.hour, .minute], from: Date())
-        return Double(c.hour ?? 0) + Double(c.minute ?? 0) / 60
     }
 }
