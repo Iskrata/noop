@@ -255,7 +255,7 @@ final class AICoachEngine: ObservableObject {
 
     let repo: Repository
     let session: URLSession
-    /// Fork: the in-flight coaching-line request per day (CoachingLine.swift), so concurrent callers share it.
+    /// Fork: in-flight cached Coach requests per slot (CoachReplies.swift), so concurrent callers share one.
     var coachingInFlight: [String: Task<String?, Never>] = [:]
 
     private static let providerKey = "ai.provider"

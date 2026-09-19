@@ -30,6 +30,7 @@ struct BiologyView: View {
             BiologySummaryCard(markers: markers,
                                onScan: { showingScan = true },
                                onAdd: { showingEditor = true })
+            if loaded, !loadedRows.isEmpty { BiologyCoachTips(rows: loadedRows) }
             if !loaded {
                 ComingSoon(what: "Reading your results…", symbol: "drop.fill")
             } else if markers.isEmpty {

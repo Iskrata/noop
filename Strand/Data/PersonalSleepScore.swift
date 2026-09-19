@@ -52,6 +52,16 @@ enum PersonalSleepScore {
         defaults.set(merged, forKey: consistencyByDayKey)
     }
 
+    /// The personal sleep need (hours) the engine last published.
+    static func needHours(defaults: UserDefaults = .standard) -> Double {
+        defaults.object(forKey: needKey) as? Double ?? AnalyticsEngine.Rest.defaultNeedHours
+    }
+
+    /// The published consistency (%) for a wake day, if any.
+    static func consistency(day: String, defaults: UserDefaults = .standard) -> Double? {
+        (defaults.dictionary(forKey: consistencyByDayKey) as? [String: Double])?[day]
+    }
+
     static func composite(_ daily: DailyMetric, defaults: UserDefaults = .standard) -> Double? {
         guard let asleep = daily.totalSleepMin, asleep > 0, let eff = daily.efficiency else { return nil }
         let need = (defaults.object(forKey: needKey) as? Double ?? AnalyticsEngine.Rest.defaultNeedHours) * 60

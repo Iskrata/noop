@@ -521,10 +521,7 @@ enum LabBookFormat {
         guard let decimals = MarkerCatalog.definition(for: key)?.decimals else {
             // Fork: a custom marker has no catalog precision; a fixed 1 decimal showed plateletcrit 0.27 as
             // "0.3" and specific gravity 1.020 as "1.0". Up to 3 decimals, trailing zeros dropped.
-            var s = String(format: "%.3f", v)
-            while s.hasSuffix("0") { s.removeLast() }
-            if s.hasSuffix(".") { s.removeLast() }
-            return s
+            return LabScanFormat.plain(v)
         }
         return decimals == 0 ? String(Int(v.rounded())) : String(format: "%.\(decimals)f", v)
     }
