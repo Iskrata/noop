@@ -66,6 +66,10 @@ struct SyncStatusPill: View {
 struct StrapEnergyBar: View {
     @EnvironmentObject private var live: LiveState
     @EnvironmentObject private var router: NavRouter
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Reduce-motion and Low Power Mode hold the bar still instead of pulsing.
+    @ObservedObject private var motion = NoopMotionState.shared
+    @State private var pulse = false
     let cardOpacity: Double
 
     private static let ticks = 36
@@ -84,12 +88,20 @@ struct StrapEnergyBar: View {
                 default: return (nil, false)
                 }
             }()
+            // Pulses while the strap charges or the link is still coming up (no reading yet / offline).
+            let busy: Bool = {
+                switch display {
+                case .charge(_, let c): return c
+                default: return true
+                }
+            }()
             Button { router.openDevices() } label: {
                 HStack(spacing: 10) {
                     Image(systemName: charging ? "bolt.fill" : "bolt")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Self.tint(pct))
                     ticks(pct)
+                        .opacity(busy && pulse ? 0.45 : 1)
                     Text(pct.map { "\(Int($0.rounded()))%" } ?? "–")
                         .font(StrandFont.rounded(14)).monospacedDigit()
                         .foregroundStyle(StrandPalette.textPrimary)
@@ -99,9 +111,19 @@ struct StrapEnergyBar: View {
                 .background(NoopPanelSurface(cornerRadius: 12, surfaceOpacity: cardOpacity))
             }
             .buttonStyle(LiquidPressStyle())
+            .onAppear { startPulse(busy) }
+            .onChangeCompat(of: busy) { startPulse($0) }
             .accessibilityLabel(pct.map { String(localized: "Strap battery \(Int($0.rounded())) percent") }
                                 ?? String(localized: "Strap battery unknown"))
         }
+    }
+
+    private func startPulse(_ busy: Bool) {
+        guard busy, !motion.poseStill(reduceMotion) else {
+            withAnimation(.default) { pulse = false }
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { pulse = true }
     }
 
     private func ticks(_ pct: Double?) -> some View {

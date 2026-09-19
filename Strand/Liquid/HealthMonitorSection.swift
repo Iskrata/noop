@@ -12,11 +12,11 @@ struct HealthMonitorSection: View {
     let cardOpacity: Double
     var fahrenheit: Bool = false
 
-    // The fork palette's status trio (Palette.swift): soft blue in range, green on the good side, orange
-    // on the bad side.
-    static var inRangeColor: Color { StrandPalette.whoopRecoveryBlue }
+    // Bevel's reading: green "Normal" inside the personal range, blue for an outlier on the good side,
+    // orange for one on the bad side (colours from the fork palette in Palette.swift).
+    static var inRangeColor: Color { StrandPalette.statusPositive }
     static var outOfRangeColor: Color { StrandPalette.metricAmber }
-    static var betterColor: Color { StrandPalette.statusPositive }
+    static var betterColor: Color { StrandPalette.whoopRecoveryBlue }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -65,10 +65,14 @@ struct HealthMonitorSection: View {
                 if let r {
                     valueText(m, r.value)
                     if r.hasRange {
+                        // "Normal" anywhere inside the personal band (mean ± 1 SD); Higher/Lower only for
+                        // an outlier.
                         HStack(spacing: 6) {
-                            Image(systemName: r.direction == .lower ? "arrow.down.circle.fill"
-                                  : r.direction == .higher ? "arrow.up.circle.fill" : "equal.circle.fill")
-                            Text(directionText(r.direction)).font(StrandFont.number(17))
+                            Image(systemName: r.inRange ? "checkmark.circle.fill"
+                                  : r.value < r.mean ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                            Text(r.inRange ? String(localized: "Normal")
+                                 : directionText(r.value < r.mean ? .lower : .higher))
+                                .font(StrandFont.number(17))
                         }
                         .foregroundStyle(tint)
                     }
