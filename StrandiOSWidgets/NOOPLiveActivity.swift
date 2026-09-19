@@ -28,6 +28,7 @@ struct NOOPLiveActivity: Widget {
                     if let e = context.state.effort {
                         bannerStat(label: "Effort", value: "\(e)")
                     }
+                    stopButton   // fork: StopLiveHRIntent
                 }
             }
             .padding()
@@ -51,7 +52,11 @@ struct NOOPLiveActivity: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text(context.attributes.title).font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Text(context.attributes.title).font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        stopButton   // fork: StopLiveHRIntent
+                    }
                 }
             } compactLeading: {
                 Image(systemName: "heart.fill").foregroundStyle(StrandPalette.statusCritical)
@@ -62,6 +67,19 @@ struct NOOPLiveActivity: Widget {
             }
         }
     }
+}
+
+/// Fork: ends the Live HR activity until the strap next reconnects (`StopLiveHRIntent`); recording continues.
+private var stopButton: some View {
+    Button(intent: StopLiveHRIntent()) {
+        Image(systemName: "stop.fill")
+            .font(.system(size: 13, weight: .bold))
+            .foregroundStyle(StrandPalette.textPrimary)
+            .frame(width: 34, height: 34)
+            .background(Circle().fill(StrandPalette.statusCritical.opacity(0.85)))
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("Stop Live HR")
 }
 
 /// Lock-Screen banner stat column (label over value). File-scope because the `ActivityConfiguration`

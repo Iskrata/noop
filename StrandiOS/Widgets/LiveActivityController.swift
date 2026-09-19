@@ -49,7 +49,14 @@ final class LiveActivityController {
         // "this strap is paired"), so keying off it left a frozen, fabricated "live" HR on the Lock
         // Screen / Dynamic Island indefinitely after the strap went out of range.
         if !connected {
+            // Fork: a disconnect ends the session the Stop button snoozed; the next connect shows it again.
+            if LiveHRActivitySnooze.isOn { LiveHRActivitySnooze.set(false) }
             Task { await end() }
+            return
+        }
+        // Fork: the user tapped Stop on the activity (`StopLiveHRIntent`) — stay off for this connection.
+        if LiveHRActivitySnooze.isOn {
+            if activity != nil || !Activity<NOOPActivityAttributes>.activities.isEmpty { Task { await end() } }
             return
         }
         guard bpm != nil else { return }
