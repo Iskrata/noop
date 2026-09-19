@@ -1164,6 +1164,16 @@ class WhoopRepository(
      * series). Reading the union surfaces the re-added strap's live data AND the canonical import history.
      * A single-WHOOP install resolves [activeDeviceId] to "my-whoop" ⇒ ONE id ⇒ byte-identical read.
      */
+    /** Count and newest timestamp of measured HR per source [hrSamplesUnion] reads, as one string: an
+     *  index-only witness of whether a window's heart rate changed, without fetching a row. */
+    suspend fun hrUnionFingerprint(activeDeviceId: String, from: Long, to: Long): String {
+        val parts = ArrayList<String>()
+        for (id in rawWhoopSourceIds(activeDeviceId)) {
+            parts += "$id=${dao.countHrInWindow(id, from, to)}:${dao.maxHrTsInWindow(id, from, to)}"
+        }
+        return parts.joinToString(",")
+    }
+
     suspend fun hrSamplesUnion(activeDeviceId: String, from: Long, to: Long, limit: Int = DEFAULT_LIMIT):
         List<HrSample> = mergeHrByTs(rawWhoopSourceIds(activeDeviceId).map { dao.hrSamples(it, from, to, limit) })
 
