@@ -474,7 +474,10 @@ struct SleepView: View {
                         score: score,
                         tint: StrandPalette.restColor,
                         diameter: 184,
-                        animated: true,
+                        // Fork: static, like Today's hero gauges. Live, this 184pt vessel re-rasterised its
+                        // gradients on the CPU 60 times a second: an on-device trace had the main thread ~95%
+                        // busy (88% CoreGraphics) while it was on screen, the Sleep tab's lag.
+                        animated: false,
                         captionText: String(localized: "of 100"),
                         numberColor: Color.white.opacity(0.98),
                         captionColor: Color.white.opacity(0.52)
