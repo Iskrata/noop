@@ -5,6 +5,7 @@ extension TodaySection {
     var customizationIcon: String {
         switch self {
         case .hero: return "gauge.with.dots.needle.67percent"
+        case .activities: return "list.bullet.rectangle"
         case .liveSession: return "figure.run.circle"
         case .synthesis: return "sparkles"
         case .keyMetrics: return "square.grid.2x2"
@@ -21,6 +22,7 @@ extension TodaySection {
     var customizationTint: Color {
         switch self {
         case .hero: return StrandPalette.chargeColor
+        case .activities: return StrandPalette.effortColor
         case .liveSession: return StrandPalette.metricCyan
         case .synthesis: return StrandPalette.accent
         case .keyMetrics: return StrandPalette.metricPurple

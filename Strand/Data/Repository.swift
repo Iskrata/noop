@@ -3131,16 +3131,26 @@ final class Repository: ObservableObject {
         autoDismissedTokens: [String],
         detectedDismissedTokens: [String]
     ) -> DetectedWorkout? {
+        undismissedAutoDetectCandidates(candidates, autoDismissedTokens: autoDismissedTokens,
+                                        detectedDismissedTokens: detectedDismissedTokens)
+            .max(by: { $0.startSec < $1.startSec })
+    }
+
+    /// Every candidate that survives BOTH durable dismissal contracts (see `selectAutoDetectCandidate`),
+    /// in detector order. The fork's Today Activities list shows all of them, not just the newest.
+    nonisolated static func undismissedAutoDetectCandidates(
+        _ candidates: [DetectedWorkout],
+        autoDismissedTokens: [String],
+        detectedDismissedTokens: [String]
+    ) -> [DetectedWorkout] {
         let exact = Set(autoDismissedTokens)
         let legacy = WorkoutSource.parseDismissedSpans(detectedDismissedTokens)
-        return candidates
-            .filter { candidate in
-                !exact.contains(autoDetectToken(candidate))
-                    && !legacy.contains { span in
-                        candidate.startSec < span.end && span.start < candidate.endSec
-                    }
-            }
-            .max(by: { $0.startSec < $1.startSec })
+        return candidates.filter { candidate in
+            !exact.contains(autoDetectToken(candidate))
+                && !legacy.contains { span in
+                    candidate.startSec < span.end && span.start < candidate.endSec
+                }
+        }
     }
 
     /// Hard cap on the dismissed-span list , a backstop so the UserDefaults array can't grow without
@@ -3184,9 +3194,33 @@ final class Repository: ObservableObject {
     func autoDetectCandidate(daysBack: Int = 2) async -> DetectedWorkout? {
         guard PuffinExperiment.autoDetectWorkoutsEnabled else { return nil }
         let now = Int(Date().timeIntervalSince1970)
-        let from = now - daysBack * 86_400
-        let samples = await hrSamples(from: from, to: now, limit: 200_000)
-        guard samples.count >= 2 else { return nil }
+        let candidates = await detectWorkoutBouts(from: now - daysBack * 86_400, to: now, traced: true)
+        return Self.selectAutoDetectCandidate(
+            candidates,
+            autoDismissedTokens: autoDetectDismissedSpans,
+            detectedDismissedTokens: dismissedDetectedSpans)
+    }
+
+    /// Fork (Today Activities): every unsaved, undismissed bout the detector finds in [from, to], oldest
+    /// first. Runs regardless of the opt-in suggestion toggle — it is a PURE READ that only lists what the
+    /// strap saw, the way WHOOP lists auto-detected activities under the day's scores.
+    /// `hr` is the caller's own read of the same window, so the list and its Effort share one DB read.
+    func detectedActivities(from: Int, to: Int, hr: [HRSample]) async -> [DetectedWorkout] {
+        let candidates = await detectWorkoutBouts(from: from, to: to, traced: false, samples: hr)
+        return Self.undismissedAutoDetectCandidates(
+            candidates,
+            autoDismissedTokens: autoDetectDismissedSpans,
+            detectedDismissedTokens: dismissedDetectedSpans)
+            .sorted { $0.startSec < $1.startSec }
+    }
+
+    /// Detector bouts in [from, now] that don't overlap a saved workout. `traced` keeps the Workouts & GPS
+    /// test-mode trace on the suggestion path only, so the Today list can't double-log it.
+    private func detectWorkoutBouts(from: Int, to now: Int, traced: Bool,
+                                    samples prefetched: [HRSample]? = nil) async -> [DetectedWorkout] {
+        let samples: [HRSample]
+        if let prefetched { samples = prefetched } else { samples = await hrSamples(from: from, to: now, limit: 200_000) }
+        guard samples.count >= 2 else { return [] }
         let hr = samples.map { (ts: $0.ts, bpm: $0.bpm) }
 
         // Resting HR: most recent nightly RHR in range, else the detector's own default (60).
@@ -3201,7 +3235,7 @@ final class Repository: ObservableObject {
         // Shadow candidates are compared only with manual/imported labels; legacy detector rows are not
         // ground truth. No shadow output can mutate the DB, visible card, daily scores or anything off-device.
         let candidates: [DetectedWorkout]
-        if TestCentre.active(.workouts), workoutsLog != nil {
+        if traced, TestCentre.active(.workouts), workoutsLog != nil {
             let (results, trace) = AutoWorkoutDetector.detectTrace(
                 hr: hr, restingBpm: restingBpm, motion: nil, savedSpans: savedSpans,
                 minimumSustainedMinutes: AutoWorkoutDetector.minSustainedMin,
@@ -3226,10 +3260,7 @@ final class Repository: ObservableObject {
                                                     motion: nil, savedSpans: savedSpans,
                                                     minimumSustainedMinutes: AutoWorkoutDetector.minSustainedMin)
         }
-        return Self.selectAutoDetectCandidate(
-            candidates,
-            autoDismissedTokens: autoDetectDismissedSpans,
-            detectedDismissedTokens: dismissedDetectedSpans)
+        return candidates
     }
 
     /// SAVE a suggested window as a manual-style "Workout" (generic sport , we don't claim a sport we

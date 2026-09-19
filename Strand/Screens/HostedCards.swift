@@ -150,9 +150,10 @@ enum HostedCard: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The default selection: EMPTY. Nothing is hosted until the user opts in. On the enum (not the prefs)
-    /// to mirror `DashboardCard.defaultSelection`; keep byte-identical to the Android companion default.
-    static let defaultSelection: [HostedCard] = []
+    /// The default selection. Upstream hosts nothing until the user opts in (and Android still does); the
+    /// fork pins Sleep Consistency to Today, the way WHOOP keeps it on its home screen. Removing it in
+    /// Customise stores an explicit empty list, so this default never comes back once edited.
+    static let defaultSelection: [HostedCard] = [.consistency]
 
     /// Canonical order used to list the not-yet-hosted remainder in the editor (mirrors `allCases`).
     static let canonicalOrder: [HostedCard] = allCases

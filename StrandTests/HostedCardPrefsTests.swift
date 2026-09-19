@@ -72,9 +72,9 @@ final class HostedCardPrefsTests: XCTestCase {
 
     /// Opt-in surface: nothing is hosted until the user adds a card.
     func testDefaultIsEmpty() {
-        XCTAssertEqual(HostedCard.defaultSelection, [])
-        XCTAssertEqual(HostedCardPrefs.decodeEnabled(""), [])
-        XCTAssertEqual(HostedCardPrefs.decodeEnabled("   "), [])
+        XCTAssertEqual(HostedCard.defaultSelection, [.consistency])
+        XCTAssertEqual(HostedCardPrefs.decodeEnabled(""), [.consistency])
+        XCTAssertEqual(HostedCardPrefs.decodeEnabled("   "), [.consistency])
     }
 
     func testEncodeDecodeRoundTripsInOrder() {

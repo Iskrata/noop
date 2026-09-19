@@ -1985,6 +1985,10 @@ struct TodayView: View {
         switch section {
         case .hero:
             classicHeroSection
+        case .activities:
+            // Fork: the Activities list is a liquid-Today section; the classic Today keeps its own
+            // workouts block.
+            EmptyView()
         case .liveSession:
             if liveSessionsBeta { liveSessionStartSection }
         case .synthesis:

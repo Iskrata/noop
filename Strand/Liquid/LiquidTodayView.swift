@@ -75,6 +75,8 @@ struct LiquidTodayView: View {
     /// strap whose history never offloads, where heart rate exists ONLY for the windows it was connected.
     @State private var hrSegments: [String] = []
     @State private var workouts: [WorkoutRow] = [] // newest-first
+    /// Fork: the selected day's resolved window, handed to the Activities section so it reads the SAME span.
+    @State private var activityWindow: ClosedRange<Int>?
     /// #today-hosted-cards: the shared SleepModel that backs every SleepModel-derived hosted sleep card
     /// (Stages vs typical today; more to follow). Built ONCE in `load()` from the SAME inputs the Sleep tab
     /// uses (`SleepModel.build`), and only when a sleep-origin card is actually hosted — so a Today with no
@@ -351,6 +353,13 @@ struct LiquidTodayView: View {
                         case .synthesis: synthesisSection
                         case .keyMetrics: keyMetricsSection
                         case .workouts: lastWorkoutsSection
+                        case .activities:
+                            if let activityWindow {
+                                DayActivitiesSection(window: activityWindow, workouts: workouts,
+                                                     dayEffort: effortStrain(displayDay),
+                                                     restingHR: displayDay?.restingHr.map(Double.init),
+                                                     restScore: restScore)
+                            }
                         case .heartRate: heartRateSection
                         case .recoveryVitals: recoveryVitalsSection
                         case .yourCards: yourCardsSection
@@ -1637,13 +1646,7 @@ struct LiquidTodayView: View {
     // MARK: - Reusable chrome
 
     private func sectionHead(_ title: String, trailing: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(LocalizedStringKey(title)).font(StrandFont.overline).tracking(1.6).foregroundStyle(StrandPalette.textTertiary)
-            Spacer()
-            Text(LocalizedStringKey(trailing)).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-        }
-        .padding(.horizontal, 2)
-        .padding(.top, 4)
+        LiquidSectionHead(title: title, trailing: trailing)
     }
 
     private func card<V: View>(@ViewBuilder _ content: () -> V) -> some View {
@@ -1712,6 +1715,7 @@ struct LiquidTodayView: View {
         let from = cycleMarkers.last(where: { $0.day == selectedDayKey }).map { Int($0.value) } ?? calendarFrom
         let toExclusive = cycleMarkers.last(where: { $0.day == nextDayKey }).map { Int($0.value) } ?? calendarTo
         let to = max(from, toExclusive - 1)
+        activityWindow = from...to
         // #1001: in-progress Effort for TODAY, over the SAME window resolved just above (the day-cycle
         // onset when that mode is on, else calendar midnight → now) with the identical params the daily
         // pass uses, so the live number matches what the engine will eventually persist. Below
