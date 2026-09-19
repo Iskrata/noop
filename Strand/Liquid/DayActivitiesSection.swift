@@ -206,7 +206,7 @@ struct DayActivitiesSection: View {
         let minutes = max(0, night.endTs - night.effectiveStartTs) / 60
         let duration = String(format: "%d:%02d", minutes / 60, minutes % 60)
         if !scoresHidden, let rest = restScore, isMainNight(night) {
-            return ("\(Int(rest.rounded()))%", String(localized: "REST · \(duration)"))
+            return ("\(Int(rest.rounded()))%", String(localized: "\(duration) ASLEEP"))
         }
         return (duration, String(localized: "HOURS"))
     }
