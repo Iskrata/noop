@@ -27,6 +27,9 @@ struct LiquidTodayView: View {
     // would re-render all of Today every second (the exact churn the LiveState leaves isolate). BLEManager
     // only publishes connect/discovery state, never HR. Injected at the app roots beside .environmentObject(model).
     @EnvironmentObject var ble: BLEManager
+    /// Fork: writes the hero's coaching line (in a pirate's voice) when Coach is set up.
+    @EnvironmentObject var coach: AICoachEngine
+    @State private var aiCoachingLine: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Low Power Mode — and the in-app "Reduce motion in NOOP" toggle — pose the sky still too, the
     /// behaviour the comment on the sky branch below has always described. Neither has a SwiftUI
@@ -90,7 +93,6 @@ struct LiquidTodayView: View {
     @State private var hostedStressHours: [DaytimeStress.HourPoint] = []
 
     // sheets / expanders
-    @State private var guideSection: ScoreSection?
     @State private var customizationDestination: TodayCustomizationDestination?
     /// #1862: the optional Coach launcher sheet. Presentation state only — opening it requests nothing.
     @State private var showCoachLauncher = false
@@ -159,7 +161,6 @@ struct LiquidTodayView: View {
 
     /// Measured width of the trailing header-control cluster, feeding the day title's fade mask. Seeded
     /// with the design-system default so the first frame is not laid out against a reserve of zero.
-    @State private var headerControlsWidth = NoopMetrics.headerControlReserveWidth
 
     /// Mock Vitality purple (#9b7bff) has no exact StrandPalette token in this theme.
     private let liquidPurple = Color(.sRGB, red: 0x9b / 255, green: 0x7b / 255, blue: 0xff / 255, opacity: 1)
@@ -385,6 +386,11 @@ struct LiquidTodayView: View {
                     // so it renders nothing by default.
                     AutoWorkoutCard()
                     dataSourcesSection
+                    // Fork: section order/visibility and the card editors, moved down from the header.
+                    Button { customizationDestination = .today } label: {
+                        LiquidFullWidthNavigationAction("Customize Today")
+                    }
+                    .buttonStyle(LiquidPressStyle())
                     Color.clear.frame(height: 90) // floating tab-bar clearance
                 }
                 .padding(.horizontal, NoopMetrics.screenHPadding)
@@ -455,9 +461,6 @@ struct LiquidTodayView: View {
         }
         .sheet(isPresented: $showSleepWindow) {
             SleepWindowSheet().environmentObject(repo).presentationDetents([.medium, .large])
-        }
-        .sheet(item: $guideSection) { section in
-            NavigationStack { ScoringGuideView(initialSection: section, onClose: { guideSection = nil }) }
         }
         .sheet(item: $customizationDestination) { destination in
             TodayCustomizationSheet(
@@ -550,99 +553,60 @@ struct LiquidTodayView: View {
     // MARK: - Scene (sky title + controls + hero)
 
     private var scene: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ZStack(alignment: .topTrailing) {
-                Button { showDayPicker = true } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(dayTitle)
-                            .font(StrandFont.rounded(28))
-                            .foregroundStyle(StrandPalette.textPrimary)
-                            .shadow(color: .black.opacity(0.4), radius: 10, y: 1)
-                        Text(dateLine)
-                            .font(StrandFont.caption)
-                            .foregroundStyle(StrandPalette.textSecondary)
-                            .shadow(color: .black.opacity(0.35), radius: 8, y: 1)
-                    }
-                    .contentShape(Rectangle())
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(dayTitle). Tap to pick a day, swipe to change day.")
-                .popover(isPresented: $showDayPicker) {
-                    DatePicker("", selection: dayPickerBinding, in: ...Repository.logicalDay(Date()),
-                               displayedComponents: [.date])
-                        .datePickerStyle(.graphical)
-                        .labelsHidden()
-                        .padding(12)
-                        .frame(minWidth: 320, minHeight: 360)
-                        .liquidPopoverAdaptation()
-                }
-                // Long names fade beneath the trailing controls while an expanded transient control
-                // participates in layout and pushes its preceding siblings left. The reserve is the
-                // cluster's MEASURED width, not a constant: a constant is only ever right for the exact
-                // set of controls it was written against, and this row has already gained one (Customize,
-                // #1207) since. Measuring also means the fade tracks the sync capsule as it expands,
-                // which is the push-left behaviour rather than a separate approximation of it.
-                .headerTrailingControlFadeMask(reserving: headerControlsWidth)
-                HStack(spacing: headerClusterSpacing) {
-                    // Profile pic (the one set in Settings) → opens Settings, matching the classic Today.
+        // Fork: Bevel's header — sync pill centred with the profile picture on the right, then the big
+        // "Today, September 19 ⌄" title (tap for the day picker), then the strap battery as the Energy bar.
+        // The quick-add button and the NOOP wordmark are gone; Customize moved to the bottom of Today.
+        VStack(alignment: .leading, spacing: 14) {
+            ZStack {
+                SyncStatusPill()
+                HStack {
+                    Spacer()
                     Button { showSettings = true } label: {
-                        Color.clear.frame(
-                            width: NoopMetrics.compactControlSize,
-                            height: NoopMetrics.compactControlSize
-                        )
+                        ProfileAvatarView(imageData: profile.avatarImageData, size: NoopMetrics.compactControlSize)
+                            .frame(width: NoopMetrics.compactControlSize, height: NoopMetrics.compactControlSize)
                     }
-                    .nativeLiquidGlassHeaderButton()
-                    .overlay {
-                        GeometryReader { proxy in
-                            let diameter = min(proxy.size.width, proxy.size.height)
-                            ProfileAvatarView(imageData: profile.avatarImageData, size: diameter)
-                                .frame(width: diameter, height: diameter)
-                                .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-                        }
-                        .allowsHitTesting(false)
-                    }
-                    .nativeLiquidGlassPhotoFinish()
+                    .buttonStyle(.plain)
                     .accessibilityLabel("Profile and settings")
-                    LiquidAddButton()
-                    LiquidBatteryButton()
-                    // One entry point for section order/visibility and both nested card editors.
-                    Button { customizationDestination = .today } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(StrandPalette.textPrimary)
-                            .frame(
-                                width: NoopMetrics.compactControlSize,
-                                height: NoopMetrics.compactControlSize
-                            )
-                    }
-                    .nativeLiquidGlassHeaderButton()
-                    .accessibilityLabel("Customize Today")
                 }
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: HeaderControlsWidthKey.self,
-                            value: proxy.size.width
-                        )
-                    }
-                )
-                .zIndex(1)
             }
-            .onPreferenceChange(HeaderControlsWidthKey.self) { measured in
-                // Ignore sub-point churn so a rounding wobble cannot re-render the mask every frame.
-                guard measured > 0, abs(measured - headerControlsWidth) > 0.5 else { return }
-                headerControlsWidth = measured
+            .frame(minHeight: NoopMetrics.compactControlSize)
+            Button { showDayPicker = true } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(headerTitle)
+                        .font(StrandFont.rounded(30))
+                        .foregroundStyle(StrandPalette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(StrandPalette.textSecondary)
+                }
+                .contentShape(Rectangle())
             }
-            // Subtle NOOP wordmark in the sky between header and hero. Perfectly centred (a letter row has
-            // no trailing tracking gap the way `Text(...).tracking()` does), with a tap easter egg.
-            // #today-layout: the hero + Start-session row moved OUT of the scene into the reorderable
-            // section block below. The wordmark's bottom pad (10) + the section VStack's 12 spacing keeps
-            // the default hero-under-wordmark gap at the original 22.
-            LiquidWordmark()
-                .padding(.top, 30)
-                .padding(.bottom, 10)
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(headerTitle). Tap to pick a day, swipe to change day.")
+            .popover(isPresented: $showDayPicker) {
+                DatePicker("", selection: dayPickerBinding, in: ...Repository.logicalDay(Date()),
+                           displayedComponents: [.date])
+                    .datePickerStyle(.graphical)
+                    .labelsHidden()
+                    .padding(12)
+                    .frame(minWidth: 320, minHeight: 360)
+                    .liquidPopoverAdaptation()
+            }
+            StrapEnergyBar(cardOpacity: cardOpacity)
         }
+        .padding(.bottom, 4)
+    }
+
+    private var coachingFingerprint: String {
+        let charge = chargeDisplay.pct.map { String(Int($0.rounded())) } ?? "-"
+        let rest = restScore.map { String(Int($0.rounded())) } ?? "-"
+        return "\(selectedDayKey)|\(charge)|\(rest)"
+    }
+
+    /// "Today, September 19" — the relative day word plus the date, Bevel's header.
+    private var headerTitle: String {
+        "\(dayTitle), \(selectedLogicalDay.formatted(.dateTime.month(.wide).day().locale(AppLanguage.activeLocale)))"
     }
 
     /// One-tap Live Session start (silent guardian, beta) — sits directly under the hero scores, the
@@ -690,11 +654,17 @@ struct LiquidTodayView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("COACHING").font(StrandFont.overline).tracking(1.6)
                         .foregroundStyle(StrandPalette.textTertiary)
-                    Text(chargeDisplay.calibrationDetail ?? synthLine)
+                    Text(chargeDisplay.calibrationDetail ?? aiCoachingLine ?? synthLine)
                         .font(StrandFont.body).foregroundStyle(StrandPalette.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, NoopMetrics.space2)
+                // One request per day per change in last night's Charge/Rest (cached in the engine), so a
+                // growing Effort doesn't re-ask all day. Today only; past days keep the on-device line.
+                .task(id: coachingFingerprint) {
+                    guard selectedDayOffset == 0 else { aiCoachingLine = nil; return }
+                    aiCoachingLine = await coach.coachingLine(fingerprint: coachingFingerprint)
+                }
             }
         }
         .padding(.vertical, NoopMetrics.space4)
@@ -713,7 +683,6 @@ struct LiquidTodayView: View {
                 // does NOT carry — it is today's own accumulation, so yesterday's number would be a false
                 // statement, not a stale one.
                 HeroScoreCell(label: String(localized: "Charge"), score: chargeDisplay.pct, tint: StrandPalette.chargeColor,
-                              animated: dataLoaded, onGuide: { guideSection = .charge },
                               detailRoute: .metric(HeroRingMetric.charge))
                 // #45: the hero Effort must honour the user's Effort scale like every other Effort read-out.
                 // Show the value on the chosen scale (0–100 or WHOOP 0–21) with the matching vessel max, and
@@ -721,14 +690,12 @@ struct LiquidTodayView: View {
                 // (12.6, not a rounded "13"); the 0–100 hero stays a whole number as before.
                 HeroScoreCell(label: String(localized: "Effort"),
                               score: effortStrain(displayDay).map { UnitFormatter.effortValue($0, scale: effortScale) },
-                              tint: StrandPalette.effortColor, animated: dataLoaded,
-                              onGuide: { guideSection = .effort },
+                              tint: StrandPalette.effortColor,
                               maxValue: effortScale == .whoop ? 21 : 100,
                               decimals: effortScale == .whoop ? 1 : 0,
                               detailRoute: .metric(HeroRingMetric.effort),
                               target: effortTargetBand)
                 HeroScoreCell(label: String(localized: "Rest"), score: restScore, tint: StrandPalette.restColor,
-                              animated: dataLoaded, onGuide: { guideSection = .rest },
                               // Fork: the Sleep screen itself (it left the tab bar), not the Rest metric page.
                               detailRoute: .sleep)
                     .overlay(alignment: .top) {
@@ -1855,14 +1822,6 @@ struct LiquidTodayView: View {
         return parts.joined(separator: " · ")
     }
 
-    private var dateLine: String {
-        // #1013: localize the sub-header date. The old en_US_POSIX "EEEE, d MMMM" formatter forced English
-        // weekday + month names regardless of the UI language. A locale-aware field template localizes both
-        // the names AND the field order (e.g. fr "mercredi 4 juillet") in the user's locale.
-        return selectedLogicalDay.formatted(
-            .dateTime.weekday(.wide).day().month(.wide).locale(AppLanguage.activeLocale))
-    }
-
     /// Provenance caption for the recovery-vitals card, keyed on the row a vital actually came from — NOT a
     /// hardcoded "yesterday". If ANY shown vital fell back to `vitalsDay` (today's own value is nil and the
     /// carried row supplies it), it stamps that row's date via the shared `TodayView.carriedCaption`, so a
@@ -1892,64 +1851,6 @@ private struct PullOffsetKey: PreferenceKey {
 
 // MARK: - NOOP wordmark (centred, with a tap easter egg)
 
-/// The subtle NOOP wordmark. Built as a row of letters (not `Text(...).tracking()`, which adds a
-/// trailing gap after the last glyph and pushes the word off-centre), so it sits DEAD centre. Tap it
-/// for a little easter egg: it plays one of several random one-shot animations — wiggle, shake, flip,
-/// spin, bounce, or a jelly squash — with a light haptic.
-private struct LiquidWordmark: View {
-    @State private var rot = 0.0      // z-rotation (wiggle / spin)
-    @State private var scaleX = 1.0   // horizontal scale (jelly squash)
-    @State private var scaleY = 1.0   // vertical scale (bounce / jelly)
-    @State private var dx = 0.0       // horizontal offset (shake)
-    @State private var flip = 0.0     // y-axis 3D flip
-    @State private var token = 0      // drives the tap haptic
-
-    var body: some View {
-        HStack(spacing: 14) {
-            ForEach(Array("NOOP".enumerated()), id: \.offset) { _, ch in
-                Text(String(ch))
-                    .font(StrandFont.rounded(16, weight: .bold))
-                    .foregroundStyle(StrandPalette.textTertiary)
-            }
-        }
-        .shadow(color: .black.opacity(0.25), radius: 6, y: 1)
-        .rotationEffect(.degrees(rot))
-        .scaleEffect(x: scaleX, y: scaleY)
-        .offset(x: dx)
-        .rotation3DEffect(.degrees(flip), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
-        .contentShape(Rectangle())
-        .onTapGesture { playRandomEgg() }
-        .liquidTapHaptic(trigger: token)
-        .frame(maxWidth: .infinity)
-        .accessibilityHidden(true)
-    }
-
-    /// The easter egg: one of several one-shot animations at random. The oscillating ones (wiggle/shake/
-    /// squash) kick the value to an extreme then let an under-damped spring settle it back through zero,
-    /// which reads as a natural wobble without hand-authored keyframes.
-    private func playRandomEgg() {
-        token &+= 1
-        switch Int.random(in: 0..<6) {
-        case 0: // wiggle
-            rot = -14
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.28)) { rot = 0 }
-        case 1: // shake
-            dx = -12
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.26)) { dx = 0 }
-        case 2: // flip
-            withAnimation(.easeInOut(duration: 0.6)) { flip += 360 }
-        case 3: // spin
-            withAnimation(.easeInOut(duration: 0.55)) { rot += 360 }
-        case 4: // bounce
-            scaleX = 1.28; scaleY = 1.28
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.42)) { scaleX = 1; scaleY = 1 }
-        default: // jelly (squash + stretch)
-            scaleX = 1.35; scaleY = 0.7
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.3)) { scaleX = 1; scaleY = 1 }
-        }
-    }
-}
-
 // MARK: - Hero score cell (count-up number over a filling vessel, tap-to-splash)
 
 /// One of the three hero scores (Charge / Effort / Rest). The vessel fills from empty and the number
@@ -1961,8 +1862,6 @@ private struct HeroScoreCell: View {
     let label: String
     let score: Double?            // on whatever scale the caller passes (nil = no data yet)
     let tint: Color
-    let animated: Bool
-    let onGuide: () -> Void
     // The scale `score` is already expressed on — 100 for Charge/Rest, or the user's chosen Effort scale
     // max (100 or 21, #45) — so the vessel fill matches the displayed number.
     var maxValue: Double = 100
@@ -1978,29 +1877,6 @@ private struct HeroScoreCell: View {
     /// Fork: Effort's recommended band as dial fractions, drawn hatched on the ring.
     var target: ClosedRange<Double>? = nil
 
-    /// The gauge, linked when there is somewhere to go.
-    ///
-    /// Built here rather than inline so the linked and plain forms stay in one place and the body reads
-    /// as three stacked elements rather than a branch.
-    @ViewBuilder
-    private var gaugeView: some View {
-        // Fork: Bevel's ring instead of the liquid vessel.
-        let gauge = ScoreRingGauge(score: score, maxValue: maxValue, decimals: decimals,
-                                   colors: [tint.opacity(0.55), tint], target: target,
-                                   unit: decimals > 0 ? nil : "%", diameter: Self.vesselDiameter)
-        if let detailRoute {
-            NavigationLink(value: detailRoute) { gauge }
-                .buttonStyle(LiquidPressStyle())
-                // The ring is what shows the NUMBER, so its spoken label carries the number too. Without
-                // this a VoiceOver user hears only the metric name on the element displaying the value,
-                // while the label below it reads the score, which is backwards.
-                .accessibilityLabel(Text("\(label), \(spokenScore)"))
-                .accessibilityHint(Text("Opens the trend and readings"))
-        } else {
-            gauge
-        }
-    }
-
     /// The score as VoiceOver should say it, matching the label row's own phrasing.
     private var spokenScore: String {
         guard let score else { return String(localized: "no data yet") }
@@ -2010,22 +1886,27 @@ private struct HeroScoreCell: View {
     }
 
     var body: some View {
-        VStack(spacing: 7) {
-            gaugeView
-            Button(action: onGuide) {
-                HStack(spacing: 3) {
-                    // #74: one line, shrink-to-fit rather than wrap under large Dynamic Type (mirrors the
-                    // score number above) so CHARGE/EFFORT/REST never grow the hero card to two lines.
-                    // Fork: Bevel's plain title-case label under the ring.
-                    Text(label).font(StrandFont.number(16))
-                        .lineLimit(1).minimumScaleFactor(0.7)
-                }
+        // Fork: ring and label are ONE tap target that opens `detailRoute` (Bevel's behaviour); the
+        // scoring-guide explainer is gone from Today.
+        let cell = VStack(spacing: 7) {
+            ScoreRingGauge(score: score, maxValue: maxValue, decimals: decimals,
+                           colors: [tint.opacity(0.55), tint], target: target,
+                           unit: decimals > 0 ? nil : "%", diameter: Self.vesselDiameter)
+            // #74: one line, shrink-to-fit rather than wrap under large Dynamic Type.
+            Text(label).font(StrandFont.number(16))
                 .foregroundStyle(StrandPalette.textPrimary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("\(label), \(spokenScore). See how it is scored."))
+                .lineLimit(1).minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        if let detailRoute {
+            NavigationLink(value: detailRoute) { cell }
+                .buttonStyle(LiquidPressStyle())
+                .accessibilityLabel(Text("\(label), \(spokenScore)"))
+                .accessibilityHint(Text("Opens the trend and readings"))
+        } else {
+            cell.accessibilityElement(children: .combine)
+        }
     }
 }
 
@@ -2118,45 +1999,10 @@ private struct DebouncedSyncSignal: ViewModifier {
     }
 }
 
-private extension View {
+extension View {
     /// Drive `debounced` from the raw sync signal through the shared debounce above.
     func debouncedSyncSignal(_ raw: Bool, into debounced: Binding<Bool>) -> some View {
         modifier(DebouncedSyncSignal(raw: raw, debounced: debounced))
-    }
-}
-
-/// Carries the trailing header cluster's measured width out to the day title's fade mask, so the reserve
-/// is whatever the controls actually occupy — including the sync capsule mid-expansion.
-private struct HeaderControlsWidthKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-/// Gap between the round Today-header controls. iOS tightens it so the sync capsule has room to expand
-/// on a phone-width header without crowding the day title; macOS has the window width to spare, so it
-/// opens the cluster up instead of paying for space it does not need.
-#if os(iOS)
-private let headerClusterSpacing = NoopMetrics.space1
-#else
-private let headerClusterSpacing = NoopMetrics.space3
-#endif
-
-private struct LiquidAddButton: View {
-    @EnvironmentObject var router: NavRouter
-    var body: some View {
-        Button { router.requestQuickActions() } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(StrandPalette.textPrimary)
-                .frame(
-                    width: NoopMetrics.compactControlSize,
-                    height: NoopMetrics.compactControlSize
-                )
-        }
-        .nativeLiquidGlassHeaderButton()
-        .accessibilityLabel("Quick actions")
     }
 }
 
@@ -2473,174 +2319,6 @@ extension LiquidTodayView {
             guard let prior = priorScored, let pct = prior.recovery else { return .noData }
             return .carried(pct: pct,
                             caption: TodayView.carriedCaption(priorDayKey: prior.day, todayKey: todayKey))
-        }
-    }
-}
-
-/// Strap-battery ring. At sync start it briefly expands within the trailing control row, then settles into
-/// an in-place spinner; the layered header keeps either state from moving the Today content. Tap → Devices.
-private struct LiquidBatteryButton: View {
-    @EnvironmentObject var live: LiveState
-    @EnvironmentObject var router: NavRouter
-
-    /// Debounced by `debouncedSyncSignal` below, so a per-chunk `backfilling` gap cannot flash the
-    /// indicator back to the battery reading in the middle of one logical sync.
-    @State private var syncing = false
-    #if DEBUG
-    /// Driven only by the `--demo-sync` harness; ignored entirely when that flag is absent.
-    @State private var demoSyncing = false
-    /// Synthetic chunk tally for the harness, so the expanded read-out is exercised without a strap.
-    /// Kept local rather than written into LiveState — a demo aid must not touch real collector state.
-    @State private var demoChunks = 0
-    #endif
-
-    /// The raw, confirmed "strap history is syncing" signal.
-    ///
-    /// Pull-to-refresh is not evidence of an offload: `syncNow()` can still decline after its
-    /// connected/bonded gate when the connection handshake or backing store is not ready. A successful
-    /// `beginBackfill()` publishes `live.backfilling` synchronously, so that state is both prompt and the
-    /// only honest source for the header and its VoiceOver label.
-    private var syncingRaw: Bool {
-        #if DEBUG
-        if DemoSyncHarness.active { return demoSyncing }
-        #endif
-        return live.backfilling
-    }
-
-    private var batteryDisplay: LiquidTodayView.StrapBatteryDisplay {
-        #if DEBUG
-        if DemoSyncHarness.active {
-            // The harness stands in for a connected WHOOP, so it answers this the way one would.
-            return .resolve(
-                activeIsWhoop: true,
-                connected: true,
-                batteryPct: DemoSyncHarness.batteryPercent,
-                charging: DemoSyncHarness.charging
-            )
-        }
-        #endif
-        return .resolve(
-            activeIsWhoop: live.activeIsWhoop,
-            connected: live.connected,
-            batteryPct: live.batteryPct,
-            charging: live.charging
-        )
-    }
-
-    private var indicatorState: ChargeSyncIndicator.BatteryState {
-        switch batteryDisplay {
-        case .offline, .notActiveDevice:
-            return .offline
-        case .pending(let charging):
-            return .pending(charging: charging)
-        case .charge(let percent, let charging):
-            return .charge(percent: percent, charging: charging)
-        }
-    }
-
-    var body: some View {
-        // Not drawn at all when the strap is not the active device. The alternative is a glyph that
-        // has to say SOMETHING about a strap nobody is wearing, and every option is a claim: a charge
-        // that is not the active device's, or a crossed-out bolt asserting a disconnection that is not
-        // the interesting fact. The two Today rows already resolve it this way. (#2208)
-        if case .notActiveDevice = batteryDisplay {
-            EmptyView()
-        } else {
-            Button { router.openDevices() } label: {
-                ChargeSyncIndicator(
-                    batteryState: indicatorState,
-                    syncing: syncing,
-                    chunks: syncChunks
-                )
-            }
-            .nativeLiquidGlassSyncButton()
-            .accessibilityLabel(batteryAccessibility)
-            .debouncedSyncSignal(syncingRaw, into: $syncing)
-            // DEBUG-gated at the CALL SITE too, not just in the body: in Release the harness must cost
-            // literally nothing, rather than an async task created and immediately returned per appearance.
-            #if DEBUG
-            .task { await runDemoSyncCycleIfNeeded() }
-            #endif
-        }
-    }
-
-    /// DEBUG `--demo-sync` only: loop the syncing signal so the charge→sync morph plays in both
-    /// directions without a strap. Returns immediately in Release and whenever the flag is absent, and
-    /// `.task` cancels it on disappear.
-    private func runDemoSyncCycleIfNeeded() async {
-        #if DEBUG
-        guard DemoSyncHarness.active else { return }
-        while !Task.isCancelled {
-            try? await Task.sleep(
-                nanoseconds: UInt64(DemoSyncHarness.idleSeconds * 1_000_000_000)
-            )
-            guard !Task.isCancelled else { return }
-            demoChunks = 0
-            demoSyncing = true
-            // Tick the tally the way an offload does, so the expanded label is watched changing rather
-            // than appearing once and holding.
-            for tick in 1...DemoSyncHarness.chunkTicks {
-                try? await Task.sleep(
-                    nanoseconds: UInt64(DemoSyncHarness.chunkIntervalSeconds * 1_000_000_000)
-                )
-                guard !Task.isCancelled else { return }
-                demoChunks = tick
-            }
-            demoSyncing = false
-        }
-        #endif
-    }
-
-    /// Chunks acked this session, shown inside the spinner where the battery percentage sits. The
-    /// expanded label stays "Syncing" — this is the numeric read-out, not the caption.
-    private var syncChunks: Int {
-        #if DEBUG
-        if DemoSyncHarness.active { return demoChunks }
-        #endif
-        return live.syncChunksThisSession
-    }
-
-    /// Never "Strap battery" alone for a no-reading state — that was indistinguishable from a real one.
-    private var batteryAccessibility: String {
-        if syncing {
-            // `syncChunks` is a COUNT, not an index, so it reads "3 chunks" — the phrasing the Android
-            // twin and `SyncStatusChip` already use. Reusing that exact key also means this read-out
-            // inherits its existing translations rather than adding an untranslated variant.
-            //
-            // The SAME accessor the ring draws from, not `live.syncChunksThisSession` directly: in
-            // Release the two are identical, but under `--demo-sync` reading LiveState here would have
-            // VoiceOver announcing a real count while the ring showed the synthetic one — i.e. the
-            // harness could not be used to check the read-out it exists to exercise.
-            let n = syncChunks
-            guard n > 0 else { return String(localized: "Syncing strap history") }
-            // #689/#815: the connect-time ring backlog, when the strap reported one. Zero is dropped by
-            // `SyncChipState.resolve`, and dropped here for the same reason: "0 pages behind" beside a
-            // running sync contradicts itself. Both counts inflect — the phrase is built from its own
-            // entry and joined through a template, so "1 chunk" and "1 page" read correctly and the
-            // joining punctuation stays inside the translated template rather than being concatenated.
-            let behind = live.pagesBehindAtConnect
-                .flatMap { $0 > 0 ? $0 : nil }
-                .map { String(localized: "\($0) pages behind at connect") }
-            if let behind {
-                return String(localized: "Syncing strap history, \(n) chunks, \(behind)")
-            }
-            return String(localized: "Syncing strap history, \(n) chunks")
-        }
-
-        switch batteryDisplay {
-        case .notActiveDevice:
-            return ""          // not drawn; the label is unreachable and must not claim anything
-        case .offline:
-            return String(localized: "Strap battery, strap not connected")
-        case .pending(let charging):
-            return charging
-                ? String(localized: "Strap battery charging, no reading yet")
-                : String(localized: "Strap battery, no reading yet")
-        case .charge(let percent, let charging):
-            let n = Int(percent.rounded())
-            return charging
-                ? String(localized: "Strap battery \(n) percent, charging")
-                : String(localized: "Strap battery \(n) percent")
         }
     }
 }

@@ -79,9 +79,9 @@ struct HealthMonitorSection: View {
     @ViewBuilder
     private func valueText(_ m: HealthMonitorMetric, _ v: Double) -> some View {
         let parts = format(m, v)
-        (Text(parts.value).font(StrandFont.rounded(28)).foregroundStyle(StrandPalette.textPrimary)
+        (Text(parts.value).font(StrandFont.rounded(28)).foregroundColor(StrandPalette.textPrimary)
          + Text(parts.unit.isEmpty ? "" : " \(parts.unit)").font(StrandFont.rounded(15))
-            .foregroundStyle(StrandPalette.textTertiary))
+            .foregroundColor(StrandPalette.textTertiary))
             .lineLimit(1).minimumScaleFactor(0.6)
     }
 

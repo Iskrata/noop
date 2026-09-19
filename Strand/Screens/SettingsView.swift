@@ -305,7 +305,6 @@ struct SettingsView: View {
     @State private var showWhatsNew = false
 
     /// "How your scores work" explainer sheet, reachable any time from About.
-    @State private var showScoringGuide = false
 
     /// "How NOOP works" primer sheet (the four-section explainability primer), reachable any
     /// time from About — covers how sleep is sorted, how scores + calibration work, what
@@ -422,9 +421,6 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showWhatsNew) {
             WhatsNewView(onClose: { showWhatsNew = false })
-        }
-        .sheet(isPresented: $showScoringGuide) {
-            ScoringGuideView(onClose: { showScoringGuide = false })
         }
         .sheet(isPresented: $showHowNoopWorks) {
             HowNoopWorksView(onClose: { showHowNoopWorks = false })
@@ -2901,34 +2897,6 @@ struct SettingsView: View {
                 .buttonStyle(LiquidPressStyle())
                 .accessibilityLabel("How NOOP works")
 
-                // How your scores work — the honest explainer for Charge / Effort / Rest and the
-                // confidence labels. Always reachable here, mirroring the "What's new" affordance.
-                Button {
-                    showScoringGuide = true
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "questionmark.circle")
-                            .foregroundStyle(StrandPalette.accent)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("How your scores work")
-                                .font(StrandFont.body)
-                                .foregroundStyle(StrandPalette.textPrimary)
-                            Text("Charge, Effort and Rest (and how they differ from WHOOP).")
-                                .font(StrandFont.footnote)
-                                .foregroundStyle(StrandPalette.textTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(StrandPalette.textTertiary)
-                            .accessibilityHidden(true)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(LiquidPressStyle())
-                .accessibilityLabel("How your scores work")
 
                 // About Apple Watch data: the honest capability/confidence page for running NOOP off
                 // just an Apple Watch (what it's great at, where it's lighter than a strap, why recovery
