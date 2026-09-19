@@ -48,12 +48,19 @@ public struct WidgetSnapshot: Codable, Equatable {
     /// Optional with a nil default so a snapshot written by an older build still decodes; nil reads as
     /// `false` (unhidden), matching a build that predates this flag.
     public var hideScores: Bool?
+    /// Fork: today's recommended Effort band (the optimal-strain range for today's Charge) as fractions of
+    /// the 0–100 dial, drawn hatched on the Daily Rings widget's Effort ring like Today's hero. Published
+    /// rather than derived here because the band table lives in the app (`CoupledView.optimalStrainRange`)
+    /// and this file is compiled into the extension. nil while Charge is unknown; nil in an older snapshot.
+    public var effortTargetLow: Double?
+    public var effortTargetHigh: Double?
 
     public init(recovery: Int?, bpm: Int?, batteryPct: Int?, bonded: Bool, updated: Date,
                 effort: Int? = nil, rest: Int? = nil, hrv: Int? = nil, restingHr: Int? = nil,
                 effortDisplay: String? = nil, effortWhoop: Bool? = nil,
                 hrSeries: [HrPoint]? = nil, stressSeries: [StressPoint]? = nil,
-                stressDay: Int? = nil, hideScores: Bool? = nil) {
+                stressDay: Int? = nil, hideScores: Bool? = nil,
+                effortTargetLow: Double? = nil, effortTargetHigh: Double? = nil) {
         self.recovery = recovery
         self.bpm = bpm
         self.batteryPct = batteryPct
@@ -69,6 +76,32 @@ public struct WidgetSnapshot: Codable, Equatable {
         self.stressSeries = stressSeries
         self.stressDay = stressDay
         self.hideScores = hideScores
+        self.effortTargetLow = effortTargetLow
+        self.effortTargetHigh = effortTargetHigh
+    }
+
+    /// The target band as a dial range, or nil when either end is missing or they are out of order.
+    public var effortTarget: ClosedRange<Double>? {
+        guard let lo = effortTargetLow, let hi = effortTargetHigh, lo <= hi else { return nil }
+        return lo...hi
+    }
+
+    /// Charge · Effort · Rest as a dated widget should show them on `date` (#daily-rings).
+    ///
+    /// The snapshot is only rewritten when the app runs, so a widget that rolls its date at midnight can
+    /// be holding numbers from a day that is over. Effort belongs to the day it was published on (it
+    /// restarts every day), so it is dropped as soon as `date` is a later local day than `updated`.
+    /// Charge and Rest are last night's scores and the app itself carries them over the rollover, so they
+    /// survive one day; any older and all three read as missing rather than passing as today's.
+    public func dailyScores(on date: Date, calendar: Calendar = .current)
+        -> (charge: Int?, effort: Int?, rest: Int?, effortTarget: ClosedRange<Double>?) {
+        let age = Self.localDayNumber(date, calendar: calendar) - Self.localDayNumber(updated, calendar: calendar)
+        let sameDay = age <= 0
+        let carried = age <= 1
+        return (carried ? recovery : nil,
+                sameDay ? effort : nil,
+                carried ? rest : nil,
+                sameDay ? effortTarget : nil)
     }
 
     /// The curve to DRAW: what was published, unless it belongs to a day that is over.
@@ -155,7 +188,8 @@ public struct WidgetSnapshot: Codable, Equatable {
         // three-ring Home Screen layouts (and the large grid) preview with filled arcs, not dashes.
         WidgetSnapshot(recovery: 72, bpm: 58, batteryPct: 84, bonded: true, updated: Date(),
                        effort: 38, rest: 81, hrv: 64, restingHr: 52,
-                       effortDisplay: "38", effortWhoop: false)
+                       effortDisplay: "38", effortWhoop: false,
+                       effortTargetLow: 14.0 / 21, effortTargetHigh: 18.0 / 21)
     }
 
     /// Honest runtime state when the app has not published a readable snapshot yet. Unlike
@@ -239,6 +273,8 @@ public struct WidgetSnapshot: Codable, Equatable {
             || previous.stressSeries != next.stressSeries
             || previous.stressDay != next.stressDay
             || previous.hideScores != next.hideScores
+            || previous.effortTargetLow != next.effortTargetLow
+            || previous.effortTargetHigh != next.effortTargetHigh
     }
 
     /// A live-only update may reuse score fields only within the same local calendar day. At rollover,

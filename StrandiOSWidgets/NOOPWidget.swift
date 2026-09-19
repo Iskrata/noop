@@ -23,8 +23,15 @@ struct NOOPProvider: TimelineProvider {
         // with no shared snapshot must show missing data honestly, never plausible sample numbers.
         let snap = WidgetSnapshot.load() ?? .unavailable
         // Refresh roughly every 15 minutes; the app also forces a reload when it publishes fresh data.
-        let next = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date().addingTimeInterval(900)
-        completion(Timeline(entries: [NOOPEntry(date: Date(), snapshot: snap)], policy: .after(next)))
+        let now = Date()
+        let next = Calendar.current.date(byAdding: .minute, value: 15, to: now) ?? now.addingTimeInterval(900)
+        // A second entry at the next local midnight, so a dated face (Daily Rings) turns its date and
+        // drops the finished day's Effort on time even when WidgetKit defers the 15-minute reload.
+        let midnight = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: now))
+            ?? now.addingTimeInterval(86_400)
+        completion(Timeline(entries: [NOOPEntry(date: now, snapshot: snap),
+                                      NOOPEntry(date: midnight, snapshot: snap)],
+                            policy: .after(next)))
     }
 }
 

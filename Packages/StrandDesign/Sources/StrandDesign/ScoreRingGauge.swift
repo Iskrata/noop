@@ -1,10 +1,10 @@
 import SwiftUI
-import StrandDesign
 
 /// Fork: Bevel's hero ring. A recessed dial, a round-capped progress arc from 12 o'clock, the score with a
 /// small unit in the centre, and — for Effort — the recommended target band drawn as a hatched arc so the
-/// gap between the day so far and the target reads at a glance. Static: no per-frame animation.
-struct ScoreRingGauge: View {
+/// gap between the day so far and the target reads at a glance. Static: no per-frame animation, so it is
+/// also the ring the Home Screen "Daily Rings" widget draws (WidgetKit does not run view animations).
+public struct ScoreRingGauge: View {
     let score: Double?
     /// The scale `score` is on (100, or 21 for the WHOOP Effort scale).
     var maxValue: Double = 100
@@ -16,11 +16,27 @@ struct ScoreRingGauge: View {
     /// Small unit after the number ("%"), nil for none.
     var unit: String? = "%"
     var diameter: CGFloat = 96
+    /// Decimal separator for a one-decimal score. The app passes its language-aware locale; the widget
+    /// extension (which does not carry the app's language settings) the device's.
+    var locale: Locale = .current
+
+    public init(score: Double?, maxValue: Double = 100, decimals: Int = 0, colors: [Color],
+                target: ClosedRange<Double>? = nil, unit: String? = "%", diameter: CGFloat = 96,
+                locale: Locale = .current) {
+        self.score = score
+        self.maxValue = maxValue
+        self.decimals = decimals
+        self.colors = colors
+        self.target = target
+        self.unit = unit
+        self.diameter = diameter
+        self.locale = locale
+    }
 
     private var frac: Double { score.map { max(0, min(1, $0 / maxValue)) } ?? 0 }
     private var lineWidth: CGFloat { diameter * 0.12 }
 
-    var body: some View {
+    public var body: some View {
         ZStack {
             // Recessed bezel + track.
             Circle().fill(StrandPalette.surfaceBase.opacity(0.55))
@@ -58,7 +74,7 @@ struct ScoreRingGauge: View {
         HStack(alignment: .firstTextBaseline, spacing: 1) {
             if let score {
                 Text(decimals > 0
-                     ? String(format: "%.\(decimals)f", locale: AppLanguage.activeLocale, score)
+                     ? String(format: "%.\(decimals)f", locale: locale, score)
                      : String(Int(score.rounded())))
                     .font(StrandFont.rounded(diameter * 0.27))
                 if let unit {

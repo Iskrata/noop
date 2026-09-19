@@ -74,7 +74,12 @@ extension WidgetSnapshot {
         let effortScale = UnitPrefs.resolveEffortScale(
             UserDefaults.standard.string(forKey: UnitPrefs.effortScaleKey) ?? ""
         )
-        let strain = day?.strain
+        // Effort is today's own, never the carried anchor's: before today's Charge is scored the anchor is
+        // yesterday's row, and its strain is yesterday's finished day, which the widget then showed as
+        // today's Effort. Today reads its hero Effort off today's row (`resolveToday`) too.
+        let strain = model.repo.today?.strain
+        // Fork: the recommended Effort band for today's Charge, as dial fractions (Today's hero hatch).
+        let targetBand = CoupledView.optimalStrainRange(recovery: day?.recovery)
         let effortDisplay: String? = strain.map { stored in
             if effortScale == .whoop {
                 return String(format: "%.1f", UnitFormatter.effortValue(stored, scale: .whoop))
@@ -116,7 +121,9 @@ extension WidgetSnapshot {
             // has one: carry the stored values forward instead of publishing an absence.
             stressSeries: stressPoints ?? storedStress?.stressSeries,
             stressDay: stress?.day ?? storedStress?.stressDay,
-            hideScores: ScoreVisibility.hidden
+            hideScores: ScoreVisibility.hidden,
+            effortTargetLow: targetBand.map { Double($0.lowerBound) / 21 },
+            effortTargetHigh: targetBand.map { Double($0.upperBound) / 21 }
         )
         saveAndReloadIfChanged(snap)
     }

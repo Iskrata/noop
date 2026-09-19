@@ -1895,7 +1895,8 @@ private struct HeroScoreCell: View {
         let cell = VStack(spacing: 7) {
             ScoreRingGauge(score: score, maxValue: maxValue, decimals: decimals,
                            colors: [tint.opacity(0.55), tint], target: target,
-                           unit: decimals > 0 ? nil : "%", diameter: Self.vesselDiameter)
+                           unit: decimals > 0 ? nil : "%", diameter: Self.vesselDiameter,
+                           locale: AppLanguage.activeLocale)
             // #74: one line, shrink-to-fit rather than wrap under large Dynamic Type.
             Text(label).font(StrandFont.number(16))
                 .foregroundStyle(StrandPalette.textPrimary)
