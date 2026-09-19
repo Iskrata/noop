@@ -97,6 +97,7 @@ struct LiquidTodayView: View {
     @State private var showSettings = false
     @State private var synthesisExpanded = false
     @State private var showLiveSession = false
+    @State private var showSleepWindow = false
 
     /// Live Sessions (silent guardian) beta gate — the SAME key the Settings toggle writes. Default from
     /// `LiveSessionPrefs.defaultEnabled`; off removes the Start-session control entirely.
@@ -182,7 +183,7 @@ struct LiquidTodayView: View {
     /// Day-cycle scene backdrop (#698). Default ON. When off, the liquid Today drops the sky for the plain
     /// dark canvas — parity with Android and the classic TodayView, which already honour this pref. Mirrors
     /// Kotlin `NoopPrefs.showDayCycleBackground`.
-    @AppStorage(SceneBackgroundPrefs.enabledKey) private var showDayCycleBackground = true
+    @AppStorage(SceneBackgroundPrefs.enabledKey) private var showDayCycleBackground = SceneBackgroundPrefs.defaultEnabled
     /// Custom background image (#custom-background): when active it overrides the sky in the backdrop below.
     @ObservedObject private var backgroundStore = BackgroundImageStore.shared
 
@@ -356,7 +357,6 @@ struct LiquidTodayView: View {
                         case .activities:
                             if let activityWindow {
                                 DayActivitiesSection(window: activityWindow, workouts: workouts,
-                                                     dayEffort: effortStrain(displayDay),
                                                      restingHR: displayDay?.restingHr.map(Double.init),
                                                      restScore: restScore)
                             }
@@ -452,6 +452,9 @@ struct LiquidTodayView: View {
         .task(id: "\(repo.refreshSeq)-\(selectedDayOffset)-\(repo.hydrationSeq)-\(hydrationEnabled)-\(dayCycleModeRaw)") {
             DashboardCardPrefs.migrateLegacyStepsAverage()
             await load()
+        }
+        .sheet(isPresented: $showSleepWindow) {
+            SleepWindowSheet().environmentObject(repo).presentationDetents([.medium, .large])
         }
         .sheet(item: $guideSection) { section in
             NavigationStack { ScoringGuideView(initialSection: section, onClose: { guideSection = nil }) }
@@ -700,10 +703,12 @@ struct LiquidTodayView: View {
                               onGuide: { guideSection = .effort },
                               maxValue: effortScale == .whoop ? 21 : 100,
                               decimals: effortScale == .whoop ? 1 : 0,
-                              detailRoute: .metric(HeroRingMetric.effort))
+                              detailRoute: .metric(HeroRingMetric.effort),
+                              caption: effortTargetCaption)
                 HeroScoreCell(label: String(localized: "Rest"), score: restScore, tint: StrandPalette.restColor,
                               animated: dataLoaded, onGuide: { guideSection = .rest },
-                              detailRoute: .metric(HeroRingMetric.rest))
+                              // Fork: the Sleep screen itself (it left the tab bar), not the Rest metric page.
+                              detailRoute: .sleep)
                     .overlay(alignment: .top) {
                         if let sourceLabel = heroSourceLabel {
                             SourceBadge("\(sourceLabel)", tint: StrandPalette.textSecondary)
@@ -905,7 +910,9 @@ struct LiquidTodayView: View {
             // load(). Until that async build lands — or on a device with no usable latest night — show the
             // graceful placeholder, mirroring stagesVsTypical.
             if let m = hostedSleepModel {
-                ConsistencyCard(model: m)
+                // Fork: tapping opens the last 7 nights' bedtime→wake candles.
+                Button { showSleepWindow = true } label: { ConsistencyCard(model: m) }
+                    .buttonStyle(LiquidPressStyle())
             } else {
                 hostedConsistencyPlaceholder
             }
@@ -2078,6 +2085,17 @@ struct LiquidTodayView: View {
         StrainScorer.effectiveEffort(live: selectedDayOffset == 0 ? liveTodayStrain : nil, stored: d?.strain)
     }
 
+    /// Fork: WHOOP's strain target — the #43 optimal band for today's Charge (`CoupledView`), on the user's
+    /// Effort scale. nil on a past day or while Charge is unknown.
+    private var effortTargetCaption: String? {
+        guard selectedDayOffset == 0,
+              let band = CoupledView.optimalStrainRange(recovery: chargeDisplay.pct) else { return nil }
+        func onScale(_ v21: Int) -> Int {
+            effortScale == .whoop ? v21 : Int((Double(v21) / UnitFormatter.effortScaleFactor).rounded())
+        }
+        return String(localized: "Target \(onScale(band.lowerBound))–\(onScale(band.upperBound))")
+    }
+
     private func effortText(_ s: Double?) -> String {
         guard let s else { return Self.noValueDash }
         // Route through the shared formatter instead of hardcoding *21: a default (0–100) user was shown the
@@ -2216,6 +2234,8 @@ private struct HeroScoreCell: View {
     /// the same score land on the identical dossier rather than diverging. The LABEL keeps its own job:
     /// it opens the scoring guide, which is this screen's only route to that explainer.
     var detailRoute: TabRoute? = nil
+    /// Fork: a small line under the label (Effort's target band).
+    var caption: String? = nil
 
     /// The gauge, linked when there is somewhere to go.
     ///
@@ -2270,6 +2290,10 @@ private struct HeroScoreCell: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text("\(label), \(spokenScore). See how it is scored."))
+            if let caption {
+                Text(caption).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
         }
         .frame(maxWidth: .infinity)
     }

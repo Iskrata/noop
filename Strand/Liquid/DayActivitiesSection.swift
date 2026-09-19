@@ -20,14 +20,14 @@ struct LiquidSectionHead: View {
     }
 }
 
-/// Fork: WHOOP's "Today's Activities" under the three scores — the night's sleep, every workout and every
-/// auto-detected bout of the selected day, each with the Effort it earned and its share of the day
-/// (`DayActivities`). A detected bout can be saved as a workout or dismissed from its row.
+/// Fork: WHOOP's "Today's Activities" under the three scores — the night's sleep, every workout, every
+/// auto-detected bout and every Apple Health mindful session of the selected day, workouts and bouts with
+/// the Effort they earned (`DayActivities`). A detected bout can be saved as a workout (picking its sport)
+/// or dismissed from its row.
 struct DayActivitiesSection: View {
     /// The day window `LiquidTodayView.load()` resolved (calendar or day-cycle), inclusive.
     let window: ClosedRange<Int>
     let workouts: [WorkoutRow]
-    let dayEffort: Double?
     let restingHR: Double?
     /// The night's Rest score (sleep performance), shown on the main sleep row.
     let restScore: Double?
@@ -40,6 +40,8 @@ struct DayActivitiesSection: View {
 
     @State private var activities: [DayActivity] = []
     @State private var pendingDetected: DetectedWorkout?
+    /// The detected bout being saved through the manual-workout sheet, so its sport can be picked.
+    @State private var savingDetected: DetectedWorkout?
 
     private var effortScale: EffortScale { UnitPrefs.resolveEffortScale(effortScaleRaw) }
 
@@ -65,15 +67,38 @@ struct DayActivitiesSection: View {
                                          surfaceOpacity: max(0, min(1, Double(cardOpacityPercent) / 100))))
         }
         .task(id: LoadKey(window: window, seq: repo.refreshSeq, workouts: workouts.map(\.startTs),
-                          dayEffort: dayEffort, restingHR: restingHR)) {
+                          restingHR: restingHR)) {
             await load()
         }
         .confirmationDialog("Auto-detected activity", isPresented: Binding(
             get: { pendingDetected != nil }, set: { if !$0 { pendingDetected = nil } }
         ), presenting: pendingDetected) { bout in
-            Button("Save as workout") { Task { await save(bout) } }
+            Button("Save as workout…") { savingDetected = bout; pendingDetected = nil }
             Button("Not a workout", role: .destructive) { dismiss(bout) }
         }
+        .sheet(item: Binding(get: { savingDetected.map(IdentifiedBout.init) },
+                             set: { if $0 == nil { savingDetected = nil } })) { item in
+            // The manual sheet's sport field (with its catalogue suggestions) names the bout; the bout only
+            // seeds the span and average HR. `replacing` is ignored: the seed row was never stored.
+            ManualWorkoutSheet(editing: Self.seedRow(item.bout)) { row, _ in
+                Task {
+                    await repo.saveManualWorkout(row)
+                    await repo.refresh()
+                }
+            }
+        }
+    }
+
+    private struct IdentifiedBout: Identifiable {
+        let bout: DetectedWorkout
+        var id: String { "\(bout.startSec):\(bout.endSec)" }
+    }
+
+    /// An unsaved row carrying the bout's span and average HR, with an empty sport for the sheet to fill.
+    private static func seedRow(_ bout: DetectedWorkout) -> WorkoutRow {
+        WorkoutRow(startTs: bout.startSec, endTs: bout.endSec, sport: "", source: "", durationS: nil,
+                   energyKcal: nil, avgHr: bout.avgBpm, maxHr: nil, strain: nil, distanceM: nil,
+                   zonesJSON: nil, notes: nil, steps: nil)
     }
 
     private var trailingCaption: String {
@@ -109,6 +134,11 @@ struct DayActivitiesSection: View {
                         frac: activity.effort.map { $0 / 100 })
             }
             .buttonStyle(.plain)
+        case .mindful:
+            rowBody(icon: "brain.head.profile", tint: StrandPalette.metricCyan, title: String(localized: "Mindfulness"),
+                    subtitle: timeRange(activity), badge: nil,
+                    value: (String(max(1, (activity.endTs - activity.startTs) / 60)), String(localized: "MIN")),
+                    frac: nil)
         }
     }
 
@@ -150,7 +180,7 @@ struct DayActivitiesSection: View {
 
     // MARK: Values
 
-    /// Effort + share of the day; with scores hidden, the raw measurement behind it (kcal, else avg HR).
+    /// Effort; with scores hidden, the raw measurement behind it (kcal, else avg HR).
     private func effortValue(_ a: DayActivity, fallbackKcal: Double?, fallbackHr: Int?) -> (main: String, caption: String) {
         if scoresHidden {
             if let kcal = fallbackKcal { return (String(Int(kcal.rounded())), String(localized: "KCAL")) }
@@ -158,9 +188,7 @@ struct DayActivitiesSection: View {
             return ("–", "")
         }
         guard let effort = a.effort else { return ("–", String(localized: "EFFORT")) }
-        let caption = a.share.map { String(localized: "\(Int(($0 * 100).rounded()))% OF DAY") }
-            ?? String(localized: "EFFORT")
-        return (UnitFormatter.effortDisplay(effort, scale: effortScale), caption)
+        return (UnitFormatter.effortDisplay(effort, scale: effortScale), String(localized: "EFFORT"))
     }
 
     private func sleepValue(_ night: CachedSleepSession) -> (main: String, caption: String) {
@@ -194,7 +222,6 @@ struct DayActivitiesSection: View {
         let window: ClosedRange<Int>
         let seq: Int
         let workouts: [Int]
-        let dayEffort: Double?
         let restingHR: Double?
     }
 
@@ -206,21 +233,16 @@ struct DayActivitiesSection: View {
         if blocks.isEmpty { blocks = await repo.computedSleepSessions(from: from - 18 * 3600, to: to) }
         let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
         let detected = await repo.detectedActivities(from: from, to: to, hr: hr)
+        let mindful = await DayActivities.mindfulSessions?(from, to) ?? []
         let scoring = DayActivities.Scoring(
             maxHR: profile.age > 0 ? StrainScorer.tanakaHRmax(age: Double(profile.age)) : nil,
             restingHR: restingHR ?? StrainScorer.defaultRestingHR,
             method: PuffinExperiment.effortMethod, sex: profile.sex)
         let built = DayActivities.build(
             sleeps: DayActivities.sleepsEnding(in: blocks, from: from, to: to),
-            workouts: workouts, detected: detected, hr: hr, dayEffort: dayEffort, scoring: scoring)
+            workouts: workouts, detected: detected, mindful: mindful, hr: hr, scoring: scoring)
         guard !Task.isCancelled else { return }
         activities = built
-    }
-
-    private func save(_ bout: DetectedWorkout) async {
-        pendingDetected = nil
-        _ = await repo.saveDetectedWorkout(bout)
-        await repo.refresh()
     }
 
     private func dismiss(_ bout: DetectedWorkout) {

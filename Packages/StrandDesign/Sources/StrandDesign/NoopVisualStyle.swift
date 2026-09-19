@@ -16,15 +16,20 @@ public enum NoopVisualStyle {
     // the SAME relative offsets from `surface` that the previous values had, so the existing top-lit
     // card gradient and hairline contrast survive the re-anchor unchanged — only the base tone moved.
     // LIGHT is untouched (WHOOP ships dark-only, so there is nothing WHOOP-sourced to move it to).
-    public static let canvas = Color(light: "#F3F4F6", dark: "#101518")
-    public static let surface = Color(light: "#FFFFFF", dark: "#283339")
-    public static let surfaceTop = Color(light: "#FFFFFF", dark: "#2E3940")
-    public static let surfaceBottom = Color(light: "#F4F5F7", dark: "#263136")
-    public static let inset = Color(light: "#E8E9ED", dark: "#1C2428")
+    //
+    // 2026-09-19: moved again, to WHOOP's app itself. The guideline gradient above is blue-grey, so the
+    // screens still read navy. WHOOP's app draws on its brand Black #000000 (the same guidelines PDF) with
+    // neutral, hue-free dark-grey cards, so DARK is now pure black + neutral greys at the same relative
+    // steps (surface/top/bottom/inset/border/highlight/divider) as before.
+    public static let canvas = Color(light: "#F3F4F6", dark: "#000000")
+    public static let surface = Color(light: "#FFFFFF", dark: "#1A1A1A")
+    public static let surfaceTop = Color(light: "#FFFFFF", dark: "#202020")
+    public static let surfaceBottom = Color(light: "#F4F5F7", dark: "#161616")
+    public static let inset = Color(light: "#E8E9ED", dark: "#0E0E0E")
 
-    public static let border = Color(light: "#D8DAE0", dark: "#354149")
-    public static let borderHighlight = Color(light: "#FFFFFF", dark: "#495569")
-    public static let divider = Color(light: "#E4E5E9", dark: "#364148")
+    public static let border = Color(light: "#D8DAE0", dark: "#262626")
+    public static let borderHighlight = Color(light: "#FFFFFF", dark: "#3A3A3A")
+    public static let divider = Color(light: "#E4E5E9", dark: "#282828")
 
     public static let primaryText = Color(light: "#17181C", dark: "#FFFFFF") // WHOOP WHITE #FFFFFF (sourced)
     public static let secondaryText = Color(light: "#555861", dark: "#C3C4CA")

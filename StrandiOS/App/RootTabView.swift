@@ -114,7 +114,9 @@ struct RootTabView: View {
                 guard selectedTab != 0 else { return }
                 let dx = v.translation.width, dy = v.translation.height
                 guard abs(dx) > 60, abs(dx) > abs(dy) * 1.6 else { return }
-                let next = min(4, max(0, selectedTab + (dx < 0 ? 1 : -1)))
+                var next = min(4, max(0, selectedTab + (dx < 0 ? 1 : -1)))
+                // No tab claims tag 3 while Coach is switched off; step over it.
+                if next == 3, !coachEnabled { next += dx < 0 ? 1 : -1 }
                 if next != selectedTab {
                     withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = next }
                 }
@@ -126,11 +128,14 @@ struct RootTabView: View {
         // its dynamic interaction with scrolling content automatically; older supported releases use
         // the corresponding system material and safe-area behaviour from the same TabView.
         TabView(selection: nativeTabSelection) {
+            // Fork order: Today, Zones, Trends, Coach, More. Sleep left the bar: Today's Rest score and the
+            // Activities sleep row push it, and it has a More row.
             tab(todayTabRoot, "Today", "square.grid.2x2", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
-            tab(TrendsView(), "Trends", "chart.line.uptrend.xyaxis", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
-            tab(SleepView(), "Sleep", "bed.double", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
-            // Tag 3 is the live Zones tab. Coach moved to a More row (and its router route opens it as a sheet).
-            tab(ZonesView(), "Zones", "heart.circle", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
+            tab(ZonesView(), "Zones", "heart.circle", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
+            tab(TrendsView(), "Trends", "chart.line.uptrend.xyaxis", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
+            if coachEnabled {
+                tab(CoachView(), "Coach", "sparkles", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
+            }
             moreTab(path: $tabPaths[4], scrollSignal: scrollTop[4]).tag(4)
         }
         .tint(StrandPalette.accent)
@@ -214,7 +219,7 @@ struct RootTabView: View {
                 router.requestedDestination = nil
             case .trends:
                 // Trends is a primary tab on iPhone (not a pillar sheet) — switch to it.
-                withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = 1 }
+                withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = 2 }
                 router.requestedDestination = nil
             case .activeWorkout:
                 // The Today active-workout indicator opens Live through the quick-action Live sheet; once
@@ -460,12 +465,12 @@ struct RootTabView: View {
                 moreSection("Insights") {
                     MoreRow("What Moves You", "wand.and.sparkles", .insightsHub)
                     MoreRow("Intelligence", "brain.head.profile", .intelligence)
-                    if coachEnabled { MoreRow("Coach", "sparkles", .coach) }
                     MoreRow("Insights", "lightbulb.fill", .insights)
                     MoreRow("Explore", "square.grid.2x2.fill", .explore)
                     MoreRow("Compare", "rectangle.split.2x1.fill", .compare)
                 }
                 moreSection("Body") {
+                    MoreRow("Sleep", "bed.double", .sleep)
                     MoreRow("Live", "waveform.path.ecg", .live)
                     MoreRow("Sleep Schedule", "bed.double.fill", .sleepSchedule)
                     MoreRow("Workouts", "figure.run", .workouts)
@@ -592,7 +597,7 @@ struct RootTabView: View {
 /// per-screen chrome the old inline links applied lives at the single `navigationDestination(for:)`
 /// registration in `moreTab`.
 private enum MoreDestination: Hashable {
-    case insightsHub, intelligence, coach, insights, explore, compare
+    case insightsHub, intelligence, insights, explore, compare, sleep
     case live, workouts, liftLog, health, labBook, stress, breathe, intervals, rhythm, sleepSchedule
     case fusedRecord, appleHealth, miBand, dataSources, backupSync, shortcutsExport, noopLimitations
     case alarms, automations, testCentre, siriShortcuts, powerSaving, settings
@@ -601,8 +606,8 @@ private enum MoreDestination: Hashable {
         switch self {
         case .insightsHub:     InsightsHubView()
         case .intelligence:    IntelligenceView()
-        case .coach:           CoachView()
         case .insights:        InsightsView()
+        case .sleep:           SleepView()
         case .explore:         MetricExplorerView()
         case .compare:         CompareView()
         case .live:            LiveView()

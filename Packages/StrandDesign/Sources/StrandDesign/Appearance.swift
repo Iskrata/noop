@@ -303,8 +303,18 @@ public enum AppearanceMode: String, CaseIterable, Identifiable, Sendable {
 /// they stay perfectly readable. Read in `TodayView` via `@AppStorage(SceneBackgroundPrefs.enabledKey)`
 /// and toggled from Settings → Appearance. Mirror in Kotlin via `NoopPrefs.showDayCycleBackground`.
 public enum SceneBackgroundPrefs {
-    /// The @AppStorage key shared by TodayView and the Settings toggle. Default value is `true`.
+    /// The @AppStorage key shared by TodayView and the Settings toggle. Default: `defaultEnabled`.
     public static let enabledKey = "noop.showDayCycleBackground"
+    /// Fork: OFF (upstream ON). WHOOP draws its screens on plain black; the sky painted them navy.
+    public static let defaultEnabled = false
+    /// Fork one-shot: installs that already stored the old ON default move to the black canvas once.
+    /// The Settings toggle still brings the sky back, and this never runs again.
+    private static let blackCanvasMigratedKey = "fork.blackCanvas.v1.done"
+    public static func migrateToBlackCanvasIfNeeded(_ defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: blackCanvasMigratedKey) else { return }
+        defaults.set(false, forKey: enabledKey)
+        defaults.set(true, forKey: blackCanvasMigratedKey)
+    }
 }
 
 /// Card-surface opacity as a PERCENT (0 = fully see-through, 100 = solid; default 100). `FrostedCardSurface`

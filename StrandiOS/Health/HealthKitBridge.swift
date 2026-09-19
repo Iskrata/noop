@@ -103,6 +103,8 @@ final class HealthKitBridge: ObservableObject {
         // empty and the imported workout shows distance but no map — same as today, so the addition
         // is strictly additive.
         s.insert(HKSeriesType.workoutRoute())
+        // Fork: mindful sessions for the Today Activities list (`DayActivities.mindfulSessions`).
+        if let mindful = HKObjectType.categoryType(forIdentifier: .mindfulSession) { s.insert(mindful) }
         return s
     }
 
@@ -171,7 +173,9 @@ final class HealthKitBridge: ObservableObject {
 
     /// A stable fingerprint of the read types currently requested.
     private static var readTypeSignature: String {
-        quantityReadIds.map(\.rawValue).sorted().joined(separator: ",")
+        // Fork: the mindful-session read joins the fingerprint, so granted installs get asked for it once.
+        (quantityReadIds.map(\.rawValue) + [HKCategoryTypeIdentifier.mindfulSession.rawValue])
+            .sorted().joined(separator: ",")
     }
 
     private static func persistReadTypeSignature() {
@@ -1655,6 +1659,24 @@ final class HealthKitBridge: ObservableObject {
                     if let q { sink(HealthKitBridge.dayString(stats.startDate), q.doubleValue(for: unit)) }
                 }
                 cont.resume(returning: true)
+            }
+            store.execute(q)
+        }
+    }
+
+    /// Fork: Apple Health mindful sessions (any source) overlapping [from, to], as unix-second spans.
+    /// Empty when the read wasn't granted — HealthKit never says which.
+    func mindfulSessions(from: Int, to: Int) async -> [ClosedRange<Int>] {
+        guard let type = HKObjectType.categoryType(forIdentifier: .mindfulSession) else { return [] }
+        let predicate = HKQuery.predicateForSamples(withStart: Date(timeIntervalSince1970: TimeInterval(from)),
+                                                    end: Date(timeIntervalSince1970: TimeInterval(to)), options: [])
+        return await withCheckedContinuation { (cont: CheckedContinuation<[ClosedRange<Int>], Never>) in
+            let q = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit,
+                                  sortDescriptors: nil) { _, samples, _ in
+                cont.resume(returning: (samples ?? []).compactMap { s in
+                    let start = Int(s.startDate.timeIntervalSince1970), end = Int(s.endDate.timeIntervalSince1970)
+                    return end > start ? start...end : nil
+                })
             }
             store.execute(q)
         }

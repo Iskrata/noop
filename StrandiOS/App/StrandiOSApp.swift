@@ -54,6 +54,7 @@ struct StrandiOSApp: App {
         // #1008: pin the pre-change Overnight-only default for existing installs before
         // anything reads it. Idempotent; a no-op on fresh installs and after the first launch.
         PuffinExperiment.migrateContinuousHrvOvernightDefault()
+        SceneBackgroundPrefs.migrateToBlackCanvasIfNeeded()
         #if DEBUG
         // DEBUG-only promo-screenshot harness: when launched with `--demo-hour <Int>`, pin Today to that
         // hour's day-cycle scene + a per-hour stat frame. No-op (active stays nil) when the arg is absent.
@@ -123,6 +124,7 @@ struct StrandiOSApp: App {
         )
         _health = StateObject(wrappedValue: bridge)
         bridge.log = { [weak model] line in model?.live.append(log: line) }
+        DayActivities.mindfulSessions = { [weak bridge] from, to in await bridge?.mindfulSessions(from: from, to: to) ?? [] }
         // Register a separate, always-on-while-authorized refresh task for Apple Health write-back.
         // The operation is write-only and bounded to the bridge's recent window; fresh BLE offloads still
         // use the immediate hook below. BGTaskScheduler chooses the actual wake time.

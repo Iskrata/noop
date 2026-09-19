@@ -23,21 +23,6 @@ final class DayActivitiesTests: XCTestCase {
         (from...to).map { HRSample(ts: $0, bpm: bpm) }
     }
 
-    func testLoadShareMapsEffortBackToLoadBeforeDividing() throws {
-        let d = StrainScorer.logMapDenominator(method: .whoopCalibrated, sex: "male")
-        func effort(_ load: Double) -> Double { StrainScorer.maxStrain * log(load + 1) / log(d) }
-        let share = try XCTUnwrap(DayActivities.loadShare(activityEffort: effort(90), dayEffort: effort(120),
-                                                          method: .whoopCalibrated, sex: "male"))
-        XCTAssertEqual(share, 0.75, accuracy: 1e-9)
-        // Dividing the Efforts themselves would have claimed ~0.94 for the same activity.
-        XCTAssertGreaterThan(effort(90) / effort(120), 0.9)
-    }
-
-    func testLoadShareIsCappedAndNilWithoutADay() {
-        XCTAssertEqual(DayActivities.loadShare(activityEffort: 60, dayEffort: 40, method: .whoopCalibrated, sex: "male"), 1)
-        XCTAssertNil(DayActivities.loadShare(activityEffort: 10, dayEffort: 0, method: .whoopCalibrated, sex: "male"))
-    }
-
     func testHrSliceIsInclusiveAndBounded() {
         let stream = hr(0, 100, bpm: 60)
         XCTAssertEqual(DayActivities.hrSlice(stream, from: 10, to: 20).map(\.ts), Array(10...20))
@@ -60,21 +45,20 @@ final class DayActivitiesTests: XCTestCase {
                                                           method: .whoopCalibrated, sex: "male"))
         let bout = DetectedWorkout(startSec: 20_000, endSec: 20_900, avgBpm: 150, peakBpm: 150, durationMin: 15)
         let rows = DayActivities.build(sleeps: [night(-20_000, 5_000)], workouts: [workout(10_000, 11_200)],
-                                       detected: [bout], hr: stream, dayEffort: dayEffort, scoring: scoring)
+                                       detected: [bout], mindful: [30_000...30_600], hr: stream, scoring: scoring)
 
-        XCTAssertEqual(rows.map(\.startTs), [20_000, 10_000, -20_000])
-        let run = rows[1], auto = rows[0]
+        XCTAssertEqual(rows.map(\.startTs), [30_000, 20_000, 10_000, -20_000])
+        let mindful = rows[0], auto = rows[1], run = rows[2]
+        XCTAssertEqual(mindful.kind, .mindful)
+        XCTAssertNil(mindful.effort)
         XCTAssertGreaterThan(try XCTUnwrap(run.effort), try XCTUnwrap(auto.effort))
         XCTAssertLessThanOrEqual(try XCTUnwrap(run.effort), dayEffort)
-        // The resting minutes earn nothing, so the two activities hold the whole day's load between them.
-        XCTAssertEqual(try XCTUnwrap(run.share) + (try XCTUnwrap(auto.share)), 1, accuracy: 0.02)
-        XCTAssertNil(rows[2].effort)
+        XCTAssertNil(rows[3].effort)
     }
 
     func testWorkoutWithoutStrapHeartRateKeepsItsStoredStrain() {
         let rows = DayActivities.build(sleeps: [], workouts: [workout(1_000, 2_000, strain: 42)], detected: [],
-                                       hr: [], dayEffort: nil, scoring: scoring)
+                                       hr: [], scoring: scoring)
         XCTAssertEqual(rows.first?.effort, 42)
-        XCTAssertNil(rows.first?.share)
     }
 }
