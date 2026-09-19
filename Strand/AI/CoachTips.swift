@@ -180,10 +180,5 @@ extension AICoachEngine {
 
 /// Plain number text for prompts: up to 3 decimals, trailing zeros dropped (POSIX, locale-free).
 enum LabScanFormat {
-    static func plain(_ v: Double) -> String {
-        var s = String(format: "%.3f", v)
-        while s.hasSuffix("0") { s.removeLast() }
-        if s.hasSuffix(".") { s.removeLast() }
-        return s
-    }
+    static func plain(_ v: Double) -> String { LabBookFormat.plain(v) }
 }
