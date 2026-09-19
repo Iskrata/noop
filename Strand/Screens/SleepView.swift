@@ -430,25 +430,10 @@ struct SleepView: View {
         }
     }
 
-    /// The 24 h dial (#1680), or nothing at all.
-    ///
-    /// Drawn only for a fit that is at least `.wide`: an `.unreadable` rhythm has no phase to compare a
-    /// night against, and an empty ring would read as a broken chart rather than as "not enough data". The
-    /// card is a reorderable Sleep section, so anyone who does not want it hides it in Arrange — the same
-    /// affordance every other card on this screen already has, rather than a new setting of its own.
-    @ViewBuilder
+    /// Fork: the `.bodyClock` section shows SLEEP TIMING — last night against the usual window
+    /// (`SleepTimingCard`), replacing upstream's HR-cosinor body-clock dial. Hidden in Arrange like any card.
     private func bodyClockDial(_ model: SleepModel) -> some View {
-        // PERF: `circadianPhase` lives on `AppModel`, isolated into its own leaf (`BodyClockDialSection`)
-        // rather than read via an `appModel: AppModel` property on this screen — see the NOTE above.
-        BodyClockDialSection(actualBedHour: Self.localClockHour(model.night.session.effectiveStartTs),
-                              actualWakeHour: Self.localClockHour(model.night.session.endTs))
-    }
-
-    /// A unix second as a fractional local clock hour — the dial's only input beyond the phase estimate.
-    static func localClockHour(_ ts: Int) -> Double {
-        let c = Calendar.current.dateComponents([.hour, .minute],
-                                                from: Date(timeIntervalSince1970: TimeInterval(ts)))
-        return Double(c.hour ?? 0) + Double(c.minute ?? 0) / 60.0
+        SleepTimingCard(night: model.night.session)
     }
 
     /// The compact "Customize" affordance above the arrangeable cards — opens the Arrange sheet. Mirrors
