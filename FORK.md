@@ -11,6 +11,9 @@ stages, HRV, resting HR, heartbeat series). Charge/Effort/Rest themselves are no
   and tested locally**, open a PR on ryanbr/noop, then merge the branch into `main`.
 - Commits and PRs carry no attribution / co-author lines. Push over SSH (the repo's `core.sshCommand`); the
   gh token lacks `workflow` scope.
+- Several sessions share `~/dev/noop`: commit only the files you changed (never `git add -A`), and build
+  what goes on the phone from a clean checkout of the committed `main` (`~/dev/noop-build`,
+  `git checkout --detach main`) so another session's half-done edits never ship.
 - Parallel work: use a git worktree per task (`git worktree add ../noop-<task> -b <branch> main`) and copy
   `Config/BundleIdSecrets.xcconfig` into it.
 
