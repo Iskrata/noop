@@ -11,6 +11,11 @@ struct BiologyView: View {
     @EnvironmentObject var repo: Repository
 
     @State private var markers: [BiologyMarker] = []
+    /// Every marker over its full history — the detail sheet reads this whatever report is selected.
+    @State private var allMarkers: [BiologyMarker] = []
+    /// Test dates with results, newest first; `selectedDay` nil = "Latest results" (each marker's latest).
+    @State private var reportDays: [String] = []
+    @State private var selectedDay: String?
     /// Grouped once per load (not per body pass — see BiologyMarker).
     @State private var groups: [(BiologyGroup, [BiologyMarker])] = []
     @State private var loaded = false
@@ -27,10 +32,11 @@ struct BiologyView: View {
                        onRefresh: { await load() }, lazy: true, topBackground: liquidScaffoldSky()) {
             // Flat children, no wrapping VStack: the scaffold's LazyVStack (spacing 20) then builds each
             // header and card on demand as it scrolls in. Paddings restore the section/item rhythm.
+            if reportDays.count > 1 { reportPicker }
             BiologySummaryCard(markers: markers,
                                onScan: { showingScan = true },
                                onAdd: { showingEditor = true })
-            if loaded, !loadedRows.isEmpty { BiologyCoachTips(rows: loadedRows) }
+            if loaded, let day = selectedDay ?? reportDays.first { BiologyCoachTips(day: day, rows: loadedRows) }
             if !loaded {
                 ComingSoon(what: "Reading your results…", symbol: "drop.fill")
             } else if markers.isEmpty {
@@ -58,7 +64,7 @@ struct BiologyView: View {
         .sheet(isPresented: $showingEditor) {
             MarkerEditorView { drafts in await save(drafts) }
         }
-        .sheet(item: Binding(get: { detailKey.flatMap { key in markers.first { $0.key == key } } },
+        .sheet(item: Binding(get: { detailKey.flatMap { key in allMarkers.first { $0.key == key } } },
                              set: { detailKey = $0?.key })) { marker in
             MarkerDetailView(markerKey: marker.key, readings: marker.readings, title: marker.name,
                              chart: AnyView(BiologyHistoryChart(marker: marker)),
@@ -73,11 +79,47 @@ struct BiologyView: View {
         // Every strap sync bumps refreshSeq; rebuilding identical cards then is a visible hitch.
         guard !loaded || rows != loadedRows else { return }
         loadedRows = rows
-        let built = BiologyMarker.build(rows, sex: AICoachEngine.profileSex)
-        let byGroup = Dictionary(grouping: built, by: \.group)
-        groups = BiologyGroup.allCases.compactMap { g in byGroup[g].map { (g, $0) } }
-        markers = built
+        reportDays = Array(Set(rows.map(\.day))).sorted(by: >)
+        if let d = selectedDay, !reportDays.contains(d) { selectedDay = nil }
+        allMarkers = BiologyMarker.build(rows, sex: AICoachEngine.profileSex)
+        rebuild()
         loaded = true
+    }
+
+    /// The cards for the selected report: each marker as it stood on that day (its history up to then), and
+    /// only the markers measured that day. "Latest results" shows every marker's latest reading.
+    private func rebuild() {
+        let shown: [BiologyMarker]
+        if let day = selectedDay {
+            shown = BiologyMarker.build(loadedRows.filter { $0.day <= day }, sex: AICoachEngine.profileSex)
+                .filter { $0.latest?.day == day }
+        } else {
+            shown = allMarkers
+        }
+        let byGroup = Dictionary(grouping: shown, by: \.group)
+        groups = BiologyGroup.allCases.compactMap { g in byGroup[g].map { (g, $0) } }
+        markers = shown
+    }
+
+    private var reportPicker: some View {
+        Menu {
+            Button("Latest results") { selectedDay = nil; rebuild() }
+            Divider()
+            ForEach(reportDays, id: \.self) { d in
+                Button("Report of \(LabBookFormat.dayFromKey(d))") { selectedDay = d; rebuild() }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                Text(selectedDay.map { "Report of \(LabBookFormat.dayFromKey($0))" } ?? String(localized: "Latest results"))
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold))
+            }
+            .font(StrandFont.subhead.weight(.semibold))
+            .foregroundStyle(StrandPalette.accent)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(Capsule().fill(StrandPalette.surfaceRaised))
+        }
+        .accessibilityLabel("Choose a lab report")
     }
 
     private func save(_ drafts: [LabMarkerRow]) async {
