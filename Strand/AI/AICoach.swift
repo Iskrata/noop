@@ -1037,13 +1037,13 @@ final class AICoachEngine: ObservableObject {
     /// Dispatch to the user's chosen provider client.
     func callProvider(key: String,
                               messages: [(role: ChatMessage.Role, content: String)]) async throws -> String {
-        try await provider.client.send(
+        Self.withoutEmDashes(try await provider.client.send(
             key: key,
             model: model,
-            systemPrompt: systemPrompt,
+            systemPrompt: systemPrompt + "\n" + Self.noEmDashRule,
             messages: messages,
             session: session
-        )
+        ))
     }
 
     /// K1: Dispatch to the user's chosen provider client's streaming method. The default
@@ -1057,11 +1057,11 @@ final class AICoachEngine: ObservableObject {
         try await provider.client.streamWithImage(
             key: key,
             model: model,
-            systemPrompt: systemPrompt,
+            systemPrompt: systemPrompt + "\n" + Self.noEmDashRule,
             messages: messages,
             inlineImage: inlineImage,
             session: session,
-            onDelta: onDelta
+            onDelta: { onDelta(Self.withoutEmDashes($0)) }
         )
     }
 

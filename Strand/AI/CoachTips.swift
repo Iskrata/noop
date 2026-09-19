@@ -26,8 +26,11 @@ extension AICoachEngine {
     func labReportTips(day: String, rows: [LabMarkerRow], sex: String, name: @escaping (String) -> String) async -> [String]? {
         let fingerprint = Self.labFingerprint(day: day, rows: rows)
         let reply = await cachedReply(slot: "labs:" + day, fingerprint: fingerprint, prompt: {
-            Self.labReportDigest(day: day, rows: rows, sex: sex, name: name)
-                + "\n\n" + self.buildContext() + "\n\n---\n\n" + Self.labInstruction
+            // Today's training data only describes a recent report; an old one gets the report alone.
+            let context = Self.isRecentReport(day) ? self.buildContext()
+                : "This report is from \(day); my current wearable data does not describe that time, so ignore training context."
+            return Self.labReportDigest(day: day, rows: rows, sex: sex, name: name)
+                + "\n\n" + context + "\n\n---\n\n" + Self.labInstruction
         })
         return reply.map { Self.tipLines($0) }
     }
@@ -35,6 +38,15 @@ extension AICoachEngine {
     /// The cached tips for a report, without requesting.
     func cachedLabReportTips(day: String, rows: [LabMarkerRow]) -> [String]? {
         cachedReply(slot: "labs:" + day, fingerprint: Self.labFingerprint(day: day, rows: rows)).map { Self.tipLines($0) }
+    }
+
+    /// True for a report taken within the last 60 days.
+    static func isRecentReport(_ day: String, now: Date = Date()) -> Bool {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        guard let date = f.date(from: day) else { return false }
+        return now.timeIntervalSince(date) < 60 * 86_400
     }
 
     static func labFingerprint(day: String, rows: [LabMarkerRow]) -> String {

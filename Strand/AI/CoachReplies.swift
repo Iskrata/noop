@@ -19,7 +19,7 @@ extension AICoachEngine {
     func cachedReply(slot: String, fingerprint: String) -> String? {
         let all = UserDefaults.standard.dictionary(forKey: Self.repliesKey) as? [String: [String: String]]
         guard let entry = all?[slot], entry["fp"] == fingerprint else { return nil }
-        return entry["text"]
+        return entry["text"].map(Self.withoutEmDashes)   // replies cached before the rule get cleaned too
     }
 
     /// The cached reply, or one request built by `prompt` (only called when a request is actually made).
@@ -57,6 +57,16 @@ extension AICoachEngine {
         let text = await task.value
         coachingInFlight[flight] = nil
         return text
+    }
+
+    /// Fork (owner's rule): no em dashes in any Coach text. Sent with every request and enforced on every
+    /// reply, streamed deltas included, since a model does not always follow the instruction.
+    static let noEmDashRule = "Style: never use em dashes (—) or en dashes (–) as punctuation; use a comma, colon or full stop instead."
+
+    /// " — " / "—" → ", "; a spaced en dash " – " → ", ". A number range like "3–5" is left alone.
+    static func withoutEmDashes(_ text: String) -> String {
+        text.replacingOccurrences(of: #"\s*—\s*"#, with: ", ", options: .regularExpression)
+            .replacingOccurrences(of: " – ", with: ", ")
     }
 
     /// "- tip" / "• tip" / "1. tip" lines → tips (Markdown emphasis stripped). At most `max`.

@@ -77,4 +77,18 @@ final class CoachTipsTests: XCTestCase {
         XCTAssertTrue(digest.contains("consistency 71%"), digest)
         XCTAssertTrue(digest.contains("average asleep 6.8h vs need 8.1h; bedtimes span 1h20; wake times span 1h10"), digest)
     }
+
+    func testOnlyRecentReportsGetTrainingContext() {
+        let now = ISO8601DateFormatter().date(from: "2026-09-19T12:00:00Z")!
+        XCTAssertTrue(AICoachEngine.isRecentReport("2026-08-01", now: now))
+        XCTAssertFalse(AICoachEngine.isRecentReport("2025-09-16", now: now))
+        XCTAssertFalse(AICoachEngine.isRecentReport("garbage", now: now))
+    }
+
+    func testEmDashesAreRemoved() {
+        XCTAssertEqual(AICoachEngine.withoutEmDashes("Charge high at 85% versus recent averages—push hard today"),
+                       "Charge high at 85% versus recent averages, push hard today")
+        XCTAssertEqual(AICoachEngine.withoutEmDashes("Sleep well — then train – easy"), "Sleep well, then train, easy")
+        XCTAssertEqual(AICoachEngine.withoutEmDashes("Aim for 3–5 servings"), "Aim for 3–5 servings")
+    }
 }
