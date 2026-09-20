@@ -6,7 +6,9 @@ import MetricKit
 /// The strap log shows a fresh launch whenever iOS relaunches NOOP for the strap, but not why the previous
 /// process ended, and the device keeps no crash or jetsam report for a quiet background termination. On
 /// 2026-09-18 NOOP was relaunched every 20–40 minutes with no report of any kind, which is how a re-score
-/// pass was left unfinished overnight. `MXAppExitMetric` counts every exit by cause (memory limit, memory
+/// pass was left unfinished overnight — or so it looked: the first report (2026-09-18…19) counted zero
+/// abnormal exits, and the pass turned out to be suspended between BLE wakes, not ended (its
+/// `assertionExpired` count and 4 % CPU share). `MXAppExitMetric` counts every exit by cause (memory limit, memory
 /// pressure, CPU limit, watchdog, suspended while holding a locked file, background-task timeout, crash),
 /// delivered about once a day for the previous 24 hours. Each payload is written to the strap log and kept
 /// in UserDefaults (`lastReportKey`) so it can be read from a pulled preferences file.

@@ -1849,10 +1849,21 @@ final class IntelligenceEngine: ObservableObject {
         // uses, and the formatter floors a backwards clock step at zero.
         var postLoopPhases: [(name: String, seconds: Double)] = []
         var postLoopMark = Date()
+        // Fork: the same phases on the CPU clock, as a second `postLoopCPU` line. The wall-clock line keeps
+        // running while iOS has the process suspended, so a backgrounded pass that was suspended mid-phase
+        // reports that phase as minutes (one 50 ms persist read 594 s) and the line cannot say what the pass
+        // actually costs. CPU time stops with the process, so this line is the one to read for where the
+        // work is. Process-wide (`processCPUSeconds`), so BLE work landing during a phase is counted in it.
+        var postLoopCPUPhases: [(name: String, seconds: Double)] = []
+        var postLoopCPUMark = RescoreBackgroundScheduler.processCPUSeconds()
         func markPostLoopPhase(_ name: String) {
             let now = Date()
             postLoopPhases.append((name: name, seconds: now.timeIntervalSince(postLoopMark)))
             postLoopMark = now
+            if let cpuNow = RescoreBackgroundScheduler.processCPUSeconds() {
+                if let cpuMark = postLoopCPUMark { postLoopCPUPhases.append((name: name, seconds: cpuNow - cpuMark)) }
+                postLoopCPUMark = cpuNow
+            }
         }
 
         // #714: replay each skipped day's diagnostic now that we're back on the main actor (diagnosticSink
@@ -2943,6 +2954,9 @@ final class IntelligenceEngine: ObservableObject {
         if !wmKey.isEmpty { UserDefaults.standard.set(wmKey, forKey: Self.analyzeWatermarkKey) }
         markPostLoopPhase("tail")
         diagnosticSink?(AnalysisPhaseTally.logLine(scope: "postLoop", postLoopPhases), nil)
+        if !postLoopCPUPhases.isEmpty {
+            diagnosticSink?(AnalysisPhaseTally.logLine(scope: "postLoopCPU", postLoopCPUPhases), nil)
+        }
         // #1538: clear the started-mark and bank how long a COMPLETED pass costs on this install. The
         // measurement is what lets `RescoreBackgroundPolicy` tell an install that finishes comfortably in a
         // background wake from one that never could, instead of guessing from a constant — the cost varies
