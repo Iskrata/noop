@@ -56,6 +56,22 @@
       "identity_sha256": "c6879bd0c72d81c059254b85d6826258e1cf3cd97bf81e26bf013559678f415b",
       "platform": "kotlin",
       "rationale": "Repository witness for the cycle load cache; the Swift side calls WhoopStore.hrFingerprint(deviceId:from:to:) per owner inline in Strand/Data/DayCycleIntelligenceIntegration.swift."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-property",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/AnalyticsModels.kt::cacheKey@property#1",
+      "identity_sha256": "44346ba83a628dc53e4f7eb6757d3ece1d98c77c612653df659182d5aceeecf0",
+      "platform": "kotlin",
+      "rationale": "Twin of the Swift UserProfile.cacheKey, which lives with the Swift UserProfile in Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift; the two types sit in differently named files, so the ledger cannot pair them."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-property",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::cacheKey@property#1",
+      "identity_sha256": "5c7b107d76b7c42ea4a0deb3bbd2bd62dc3d5f267b276af2f521502add2c73a2",
+      "platform": "swift",
+      "rationale": "Twin of the Kotlin UserProfile.cacheKey in android/app/src/main/java/com/noop/analytics/AnalyticsModels.kt; the two types sit in differently named files, so the ledger cannot pair them."
     }
   ]
 }

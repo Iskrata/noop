@@ -3363,6 +3363,8 @@ final class IntelligenceEngine: ObservableObject {
     /// re-scored all 21 nights from scratch. On a backgrounded phone that turned a seconds-long pass into
     /// hours (a field log: 8 813 s and 2 345 s, back to back). A night still being slept is not a habit yet;
     /// it joins the history the day after, once, when the window rolls anyway.
+    ///
+    /// Internal rather than private only so a test can drive the `finishedBefore` cutoff directly.
     static func computeHabitualSleep(
         store: WhoopStore, importedId: String, computedId: String,
         windowStart: Int, windowEnd: Int, finishedBefore: Int, offsetSec: Int
