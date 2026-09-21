@@ -15,13 +15,17 @@ enum WhoopImporter {
     /// like the on-device deviation. Nil until that baseline is usable. Rows without an absolute keep their
     /// `skinTempDevC`. The WHOOP export ships absolute °C only; storing it as the deviation read an imported
     /// night as +33 °C wherever a caller trusts the column (Charge breakdown, Trends report).
+    ///
+    /// The column is not homogeneous: an imported night's deviation is against a baseline folded over the
+    /// imported absolutes, a computed night's against the on-device baseline. A window spanning both (the
+    /// Coach's 30-day average, `AICoach`) mixes the two.
     static func withSkinTempDeviations(_ rows: [DailyMetric]) -> [DailyMetric] {
         guard let cfg = Baselines.metricCfg["skin_temp"] else { return rows }
         var state: BaselineState?
         return rows.sorted { $0.day < $1.day }.map { row in
             guard let celsius = row.skinTempC else { return row }
             let deviation = state.flatMap { $0.usable ? $0 : nil }
-                .map { (Baselines.deviation(celsius, state: $0).delta * 100.0).rounded() / 100.0 }
+                .map { Baselines.roundedDelta2dp(celsius, state: $0) }
             state = Baselines.update(state, value: celsius, cfg: cfg)
             return row.with(recovery: row.recovery, skinTempDevC: deviation, skinTempC: celsius)
         }

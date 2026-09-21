@@ -336,6 +336,10 @@ object WhoopCsvImporter {
      * without an absolute keep their deviation. Storing the export's absolute as the deviation read an
      * imported night as +33 °C wherever the column is trusted. Twin of the Swift
      * `WhoopImporter.withSkinTempDeviations`.
+     *
+     * The column is not homogeneous: an imported night's deviation is against a baseline folded over the
+     * imported absolutes, a computed night's against the on-device baseline. A window spanning both (the
+     * Coach's 30-day average) mixes the two.
      */
     internal fun withSkinTempDeviations(rows: List<DailyMetric>): List<DailyMetric> {
         val cfg = Baselines.metricCfg["skin_temp"] ?: return rows
@@ -343,7 +347,7 @@ object WhoopCsvImporter {
         return rows.sortedBy { it.day }.map { row ->
             val celsius = row.skinTempC ?: return@map row
             val deviation = state?.takeIf { it.usable }
-                ?.let { Math.round(Baselines.deviation(celsius, it).delta * 100.0) / 100.0 }
+                ?.let { Baselines.roundedDelta2dp(celsius, it) }
             state = Baselines.update(state, celsius, cfg)
             row.copy(skinTempDevC = deviation, skinTempC = celsius)
         }
