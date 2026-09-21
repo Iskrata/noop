@@ -28,7 +28,7 @@ struct ActivityDetailSheet: View {
                 VStack(alignment: .leading, spacing: 18) {
                     Text(timeRange).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                     HStack(spacing: 22) {
-                        stat("DURATION", "\(max(0, activity.endTs - activity.startTs) / 60) min")
+                        stat("DURATION", RawMetricHeroCell.hoursMinutes(Double(max(0, activity.endTs - activity.startTs)) / 60))
                         stat("AVG HR", avgHr.map { "\($0)" } ?? "–")
                         stat("MAX HR", maxHr.map { "\($0)" } ?? "–")
                         if let effortText { stat("EFFORT", effortText) }

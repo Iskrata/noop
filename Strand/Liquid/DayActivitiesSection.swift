@@ -206,12 +206,11 @@ struct DayActivitiesSection: View {
     }
 
     private func sleepValue(_ night: CachedSleepSession) -> (main: String, caption: String) {
-        let minutes = max(0, night.endTs - night.effectiveStartTs) / 60
-        let duration = String(format: "%d:%02d", minutes / 60, minutes % 60)
+        let duration = RawMetricHeroCell.hoursMinutes(Double(max(0, night.endTs - night.effectiveStartTs)) / 60)
         if !scoresHidden, let rest = restScore, isMainNight(night) {
             return ("\(Int(rest.rounded()))%", String(localized: "\(duration) ASLEEP"))
         }
-        return (duration, String(localized: "HOURS"))
+        return (duration, String(localized: "ASLEEP"))
     }
 
     /// The day's longest block carries the Rest score; naps show only their duration.
@@ -226,8 +225,7 @@ struct DayActivitiesSection: View {
         let f = AppClock.hourMinuteFormatter()
         let start = f.string(from: Date(timeIntervalSince1970: TimeInterval(a.startTs)))
         let end = f.string(from: Date(timeIntervalSince1970: TimeInterval(a.endTs)))
-        let minutes = max(0, a.endTs - a.startTs) / 60
-        return "\(start)–\(end) · \(minutes) min"
+        return "\(start)–\(end) · \(RawMetricHeroCell.hoursMinutes(Double(max(0, a.endTs - a.startTs)) / 60))"
     }
 
     // MARK: Data
