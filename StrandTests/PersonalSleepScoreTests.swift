@@ -36,4 +36,34 @@ final class PersonalSleepScoreTests: XCTestCase {
         XCTAssertEqual(score, PersonalSleepScore.performance(asleepMin: 459, needMin: 510, efficiencyPct: 91,
                                                              consistencyPct: 70), accuracy: 1e-9)
     }
+
+    /// The night the running pass just detected counts before it is written: three stored nights in bed
+    /// ~01:00 → ~09:00, then a fresh 22:20 → 06:05 night that is only in `fresh`. Without it the wake day
+    /// has no consistency and the score falls back to 78 until the next pass.
+    func testConsistencyIncludesTheNightThePassHasNotWrittenYet() async throws {
+        let store = try await WhoopStore.inMemory()
+        let base = 1_789_776_000   // 2026-09-19 00:00 UTC
+        func night(_ day: Int, _ onMin: Int, _ wakeMin: Int) -> CachedSleepSession {
+            CachedSleepSession(startTs: base + day * 86_400 + onMin * 60, endTs: base + day * 86_400 + wakeMin * 60,
+                               efficiency: 0.93, restingHr: 55, avgHrv: 80, stagesJSON: nil)
+        }
+        _ = try await store.upsertSleepSessions([night(0, 60, 540), night(1, 65, 555), night(2, 55, 545)],
+                                                deviceId: "w-noop")
+        let tonight = night(3, -100, 365)
+        let stale = await IntelligenceEngine.sleepConsistencyByWakeDay(
+            store: store, importedId: "w", computedId: "w-noop", from: base - 86_400, to: base + 5 * 86_400,
+            offsetSec: 0)
+        XCTAssertNil(stale["2026-09-22"])
+        let fresh = await IntelligenceEngine.sleepConsistencyByWakeDay(
+            store: store, importedId: "w", computedId: "w-noop", from: base - 86_400, to: base + 5 * 86_400,
+            offsetSec: 0, fresh: [tonight])
+        let c = try XCTUnwrap(fresh["2026-09-22"])
+        XCTAssertLessThan(c, 60)   // ~2.7 h earlier bed and wake than the three nights before
+        // A stored copy of the same night (same key, shorter) loses to the fresh one.
+        _ = try await store.upsertSleepSessions([night(3, -100, 200)], deviceId: "w-noop")
+        let again = await IntelligenceEngine.sleepConsistencyByWakeDay(
+            store: store, importedId: "w", computedId: "w-noop", from: base - 86_400, to: base + 5 * 86_400,
+            offsetSec: 0, fresh: [tonight])
+        XCTAssertEqual(try XCTUnwrap(again["2026-09-22"]), c, accuracy: 1e-9)
+    }
 }

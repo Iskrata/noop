@@ -959,11 +959,6 @@ final class IntelligenceEngine: ObservableObject {
         let sleepConsistency = VitalityEngine.sleepConsistency(nightlyHours: Array(nightlyHours.suffix(28)))
         let sleepNeedHours = AnalyticsEngine.Rest.personalizedNeedHours(nightlyHours: nightlyHours,
                                                                         age: profile.age)
-        PersonalSleepScore.publish(
-            needHours: sleepNeedHours,
-            consistencyByDay: await Self.sleepConsistencyByWakeDay(
-                store: store, importedId: deviceId, computedId: deviceId + "-noop",
-                from: nowLocalMidnight - (maxDays + 4) * 86_400, to: now, offsetSec: tzOffset))
 
         // ── FIX 1 (main-actor jank): run the ENTIRE per-day enumeration OFF the main actor ───────────
         // Every `await store.…` read inside this loop has its continuation RESUME on the main actor
@@ -1935,6 +1930,20 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("dayReplay")
+        // Fork: publish the Sleep score's inputs HERE, after the day loop, with this pass's own detected
+        // nights. Published before the loop, the night being scored was only in the store as last pass
+        // left it (sessions are written at `sleepWrite`, after `sleep_performance` is persisted), so every
+        // morning's first score ran on the fallback consistency and the next pass corrected it.
+        let dismissedSleep = repo.dismissedSleepWindows()
+        let freshSleep = scoredNights.flatMap(\.cachedSleep).filter { s in
+            !dismissedSleep.contains { s.startTs < $0.end && $0.start < s.endTs }
+        }
+        PersonalSleepScore.publish(
+            needHours: sleepNeedHours,
+            consistencyByDay: await Self.sleepConsistencyByWakeDay(
+                store: store, importedId: deviceId, computedId: deviceId + "-noop",
+                from: nowLocalMidnight - (maxDays + 4) * 86_400, to: now, offsetSec: tzOffset,
+                fresh: freshSleep))
         // ── Seed the baseline from the UNION of imported nightly history + the values just computed.
         // THIS is the BLE-only recovery fix: the "-noop" nightly avgHrv/restingHr finally feed the
         // baseline so a strap-only user crosses Baselines.minNightsSeed and recovery lights up.

@@ -195,7 +195,7 @@ struct SettingsView: View {
     // Live-HR Live Activity (Lock Screen + Dynamic Island), iOS only (#336). Default on.
     @AppStorage(UnitPrefs.liveActivityKey) private var liveActivityEnabled = true
     // Strap-sync Live Activity, iOS only. Separate from the live-HR one on purpose. Default on.
-    @AppStorage(UnitPrefs.syncLiveActivityKey) private var syncLiveActivityEnabled = true
+    @AppStorage(UnitPrefs.syncLiveActivityKey) private var syncLiveActivityEnabled = UnitPrefs.syncLiveActivityDefault
     @AppStorage(DayCycleMode.storageKey) private var dayCycleModeRaw = DayCycleMode.sleepOnset.rawValue
     // Alternate app icon (iOS only) — false = Titanium (primary AppIcon), true = Blue Titanium
     // ("AppIcon-Navy"). Display-only preference; the live switch goes through setAlternateIconName.

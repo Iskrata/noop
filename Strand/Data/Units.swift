@@ -126,11 +126,13 @@ enum UnitPrefs {
 
     /// Whether the strap-sync Live Activity may show, iOS only. Its own switch, deliberately separate from
     /// the live-HR one above: wanting a sync readout says nothing about wanting a heart rate on the Lock
-    /// Screen, and the reverse. Defaults to ON, read default-true like its sibling.
+    /// Screen, and the reverse. Fork: defaults to OFF — the owner doesn't want a Dynamic Island for every
+    /// ten-minute top-up; the Settings switch still turns it back on.
     static let syncLiveActivityKey = "liveActivity.sync.enabled"
+    static let syncLiveActivityDefault = false
     static func syncLiveActivityEnabled() -> Bool {
         UserDefaults.standard.object(forKey: syncLiveActivityKey) == nil
-            ? true : UserDefaults.standard.bool(forKey: syncLiveActivityKey)
+            ? syncLiveActivityDefault : UserDefaults.standard.bool(forKey: syncLiveActivityKey)
     }
 
     /// Resolve temperature, following body measurements when no explicit override is set.
