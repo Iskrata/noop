@@ -407,11 +407,11 @@ struct LiquidTodayView: View {
             #endif
         }
         .coordinateSpace(name: Self.pullSpace)
-        // Fork: the sync hairline, pinned just under the status bar so it stays put while Today scrolls.
+        // Fork: the sync hairline along the very top edge of the screen, above the Dynamic Island and out of
+        // the status bar's way. Pinned, so it stays put while Today scrolls.
         .overlay(alignment: .top) {
             SyncProgressBar()
-                .padding(.horizontal, NoopMetrics.screenHPadding)
-                .padding(.top, 2)
+                .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)
         }
         #if os(iOS)
