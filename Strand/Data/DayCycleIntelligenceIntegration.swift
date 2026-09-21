@@ -214,7 +214,7 @@ import WhoopStore
                 }
             }
             let loadKey = "\(window.onset)-\(window.endExclusive)|\(hrWitness.joined(separator: ","))"
-                + "|rhr=\(restingHR)|max=\(effectiveMaxHR.map { "\($0)" } ?? "nil")|\(effortMethod)|\(profile)"
+                + "|rhr=\(restingHR)|max=\(effectiveMaxHR.map { "\($0)" } ?? "nil")|\(effortMethod)|\(profile.cacheKey)"
             let load: CachedLoad
             if let hit = cache.loads[window.sleepId], hit.key == loadKey, !hrWitness.contains(where: { $0.hasSuffix("=unread") }) {
                 load = hit

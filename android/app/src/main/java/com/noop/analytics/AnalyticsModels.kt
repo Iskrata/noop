@@ -52,7 +52,17 @@ data class UserProfile(
      * (the body term cancels out of the age formula). Default param so existing call-sites compile.
      */
     val waistCm: Double = 0.0,
-)
+) {
+    /**
+     * Every stored field, for a cache key that must change when the profile does (the per-cycle load cache,
+     * `IntelligenceEngine.loadCacheKey`). Named explicitly rather than read from the generated `toString`,
+     * which is not a contract. A new field belongs here too. Doubles by bit pattern, so the key is exact.
+     * Twin of Swift `UserProfile.cacheKey`.
+     */
+    val cacheKey: String
+        get() = "w=${weightKg.toRawBits()},h=${heightCm.toRawBits()},a=${age.toRawBits()},s=$sex," +
+            "t=${stepTicksPerStep.toRawBits()},waist=${waistCm.toRawBits()}"
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sleep staging output shapes (SleepStager.swift)

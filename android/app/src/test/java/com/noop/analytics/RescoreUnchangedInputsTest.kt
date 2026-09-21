@@ -28,4 +28,16 @@ class RescoreUnchangedInputsTest {
         assertNotEquals(key("my-whoop=86000:87399"), key("my-whoop=86001:87399"))
         assertNotEquals(key("my-whoop=86000:87399"), key("my-whoop=86000:87399", rhr = 56.0))
     }
+
+    /** Each profile field moves the key: calories read weight, height, age and sex. */
+    @Test
+    fun everyProfileFieldMovesTheLoadKey() {
+        val base = UserProfile()
+        fun key(p: UserProfile) = PhysiologicalStepCycleEngine.loadCacheKey(
+            1_000L, 87_400L, "my-whoop=1:2", 55.0, 192.6, StrainScorer.Method.EDWARDS, p)
+        listOf(base.copy(weightKg = 71.0), base.copy(heightCm = 171.0), base.copy(age = 31.0),
+               base.copy(sex = "male"), base.copy(stepTicksPerStep = 2.0), base.copy(waistCm = 80.0))
+            .forEach { assertNotEquals(key(base), key(it)) }
+        assertEquals(key(base), key(base.copy()))
+    }
 }
