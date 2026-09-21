@@ -353,6 +353,8 @@ final class HealthWritebackTests: XCTestCase {
         // Strap taken off to charge at wake: no newer heart rate arrives.
         XCTAssertTrue(HealthWriteback.nightIsStillOpen(endTs: 1_000, newestHeartRateTs: 1_000, now: 1_000 + 2 * 3_600 - 1))
         XCTAssertFalse(HealthWriteback.nightIsStillOpen(endTs: 1_000, newestHeartRateTs: 1_000, now: 1_000 + 2 * 3_600))
+    }
+
     func testABatchFingerprintIgnoresOrderAndSeesEveryChange() {
         let a = HealthWriteback.batchFingerprint(["k1|55|100", "k2|60|200"])
         XCTAssertEqual(a, HealthWriteback.batchFingerprint(["k2|60|200", "k1|55|100"]))

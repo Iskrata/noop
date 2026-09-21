@@ -198,6 +198,8 @@ public enum HealthWriteback {
     /// seen the wearer awake; after `openNightMaxHoldSeconds` it is written regardless.
     public static func nightIsStillOpen(endTs: Int, newestHeartRateTs: Int, now: Int) -> Bool {
         newestHeartRateTs - endTs < openNightMarginSeconds && now - endTs < openNightMaxHoldSeconds
+    }
+
     // MARK: - Skipping an unchanged rewrite
 
     /// How long an unchanged batch may go without being rewritten. The skip trusts that Health still holds

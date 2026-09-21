@@ -776,8 +776,15 @@ final class HealthKitBridge: ObservableObject {
         }
     }
 
-    /// UserDefaults key for the last batch written of one kind (`HealthWriteback.batchFingerprint`).
-    private func writtenBatchKey(_ kind: String) -> String { "hkWrittenBatch.v1.\(kind)" }
+    deinit {
+        // The observer only removes itself once it fires; a bridge released first would leave it registered.
+        if let unlockObserver { NotificationCenter.default.removeObserver(unlockObserver) }
+    }
+
+    /// UserDefaults key for the last batch written of one kind (`HealthWriteback.batchFingerprint`). Per strap,
+    /// like `hrWriteCursorKey`: on a two-strap install the heart-rate cursor moves with the strap, and a
+    /// fingerprint shared across straps would describe a different strap's batch.
+    private func writtenBatchKey(_ kind: String) -> String { "hkWrittenBatch.v1.\(noopDeviceId).\(kind)" }
 
     /// Whether this kind's batch is unchanged since it last saved (`HealthWriteback.canSkipUnchangedWrite`).
     private func isUnchangedBatch(_ kind: String, fingerprint: String) -> Bool {
@@ -968,7 +975,9 @@ final class HealthKitBridge: ObservableObject {
         for r in imported { byDay[r.day] = HealthExportMerge.merged(computed: byDay[r.day], imported: r) }
         let rows = byDay.keys.sorted().filter { !holdingDays.contains($0) }.map { byDay[$0]! }
 
-        struct Candidate { let type: HKQuantityType; let key: String; let sample: HKQuantitySample }
+        // `value` is the number the sample was built from, in its metric's fixed unit, so the fingerprint below
+        // does not depend on how HealthKit formats a quantity.
+        struct Candidate { let type: HKQuantityType; let key: String; let value: Double; let sample: HKQuantitySample }
         var candidates: [Candidate] = []
         func add(_ id: HKQuantityTypeIdentifier, _ unit: HKUnit, _ value: Double, _ day: String, _ at: Date) {
             guard let type = HKQuantityType.quantityType(forIdentifier: id),
@@ -984,7 +993,7 @@ final class HealthKitBridge: ObservableObject {
                 start: at, end: at,
                 metadata: [HKMetadataKeyExternalUUID: key]
             )
-            candidates.append(Candidate(type: type, key: key, sample: sample))
+            candidates.append(Candidate(type: type, key: key, value: value, sample: sample))
         }
 
         for row in rows {
@@ -1014,7 +1023,7 @@ final class HealthKitBridge: ObservableObject {
         }
         guard !candidates.isEmpty else { return }
         let vitalsFingerprint = HealthWriteback.batchFingerprint(candidates.map {
-            "\($0.key)|\($0.sample.quantity)|\($0.sample.startDate.timeIntervalSince1970)"
+            "\($0.key)|\($0.value.bitPattern)|\($0.sample.startDate.timeIntervalSince1970)"
         })
         guard !isUnchangedBatch("vitals", fingerprint: vitalsFingerprint) else { return }
 
