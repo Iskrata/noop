@@ -407,6 +407,13 @@ struct LiquidTodayView: View {
             #endif
         }
         .coordinateSpace(name: Self.pullSpace)
+        // Fork: the sync hairline, pinned just under the status bar so it stays put while Today scrolls.
+        .overlay(alignment: .top) {
+            SyncProgressBar()
+                .padding(.horizontal, NoopMetrics.screenHPadding)
+                .padding(.top, 2)
+                .allowsHitTesting(false)
+        }
         #if os(iOS)
         // #697 parity: ScreenScaffold already stops a vertical scroll from drifting/bouncing the
         // screen left-right on every other tab. Liquid Today runs its own ScrollView (not
@@ -556,12 +563,12 @@ struct LiquidTodayView: View {
     // MARK: - Scene (sky title + controls + hero)
 
     private var scene: some View {
-        // Fork: Bevel's header — sync pill centred with the profile picture on the right, then the big
+        // Fork: Bevel's header — the profile picture on the right (a hairline sync bar runs along the top
+        // edge while the strap offloads), then the big
         // "Today, September 19 ⌄" title (tap for the day picker). The strap battery sits under the rings.
         // The quick-add button and the NOOP wordmark are gone; Customize moved to the bottom of Today.
         VStack(alignment: .leading, spacing: 14) {
             ZStack {
-                SyncStatusPill()
                 HStack {
                     Spacer()
                     Button { showSettings = true } label: {

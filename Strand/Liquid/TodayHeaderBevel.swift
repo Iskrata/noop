@@ -3,61 +3,53 @@ import StrandDesign
 
 // MARK: - Bevel-style Today header (fork)
 //
-// Bevel's top of Home: a status pill that pulses while the strap syncs and briefly says "Sync complete"
-// afterwards, the profile picture on the right, and the strap battery as Bevel's Energy bar (a row of
+// Bevel's top of Home: a hairline sync bar along the top edge, the profile picture on the right, and the strap battery as Bevel's Energy bar (a row of
 // ticks with the percentage) instead of the round charge/sync button.
 
-/// Pulsing sync pill. Hidden while idle; pulses with the chunk count while an offload runs; shows "Sync
-/// complete" for a few seconds once it ends.
-struct SyncStatusPill: View {
+/// A hairline across the top of Today while the strap syncs: a faint track with a light sweeping left to
+/// right, fading out when the offload ends. Replaces the "Syncing" pill, which drew a large chip for what is
+/// usually an eight-second top-up. Reduce Motion / Low Power Mode show the track without the sweep.
+struct SyncProgressBar: View {
     @EnvironmentObject private var live: LiveState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Reduce-motion and Low Power Mode hold the pill still instead of pulsing.
     @ObservedObject private var motion = NoopMotionState.shared
     @State private var syncing = false
-    @State private var justFinished = false
-    @State private var pulse = false
+    @State private var phase: CGFloat = 0
+
+    private static let height: CGFloat = 2.5
 
     var body: some View {
-        Group {
-            if syncing {
-                pill(icon: "arrow.triangle.2.circlepath", tint: StrandPalette.accent,
-                     text: live.syncChunksThisSession > 0
-                        ? String(localized: "Syncing · \(live.syncChunksThisSession)")
-                        : String(localized: "Syncing…"))
-                    .opacity(pulse ? 0.55 : 1)
-                    .onAppear {
-                        guard !motion.poseStill(reduceMotion) else { return }
-                        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { pulse = true }
-                    }
-                    .onDisappear { pulse = false }
-            } else if justFinished {
-                pill(icon: "checkmark.circle.fill", tint: StrandPalette.statusPositive,
-                     text: String(localized: "Sync complete"))
-                    .transition(.opacity)
+        GeometryReader { geo in
+            let w = geo.size.width
+            ZStack(alignment: .leading) {
+                Capsule().fill(StrandPalette.accent.opacity(0.18))
+                if !motion.poseStill(reduceMotion) {
+                    Capsule()
+                        .fill(LinearGradient(colors: [StrandPalette.accent.opacity(0), StrandPalette.accent,
+                                                      StrandPalette.accent.opacity(0)],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .frame(width: w * 0.35)
+                        .offset(x: -w * 0.35 + phase * w * 1.35)
+                }
             }
+            .clipShape(Capsule())
         }
+        .frame(height: Self.height)
+        .opacity(syncing ? 1 : 0)
+        .animation(.easeInOut(duration: 0.35), value: syncing)
         .debouncedSyncSignal(live.backfilling, into: $syncing)
-        .onChangeCompat(of: syncing) { now in
-            guard !now else { justFinished = false; return }
-            withAnimation { justFinished = true }
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 4_000_000_000)
-                withAnimation { justFinished = false }
-            }
-        }
-        .accessibilityElement(children: .combine)
+        .onChangeCompat(of: syncing) { sweep($0) }
+        .onAppear { sweep(syncing) }
+        .onDisappear { phase = 0 }
+        .accessibilityElement()
+        .accessibilityLabel(syncing ? String(localized: "Syncing") : "")
+        .accessibilityHidden(!syncing)
     }
 
-    private func pill(icon: String, tint: Color, text: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon).font(.system(size: 15, weight: .bold))
-            Text(text).font(StrandFont.number(16)).lineLimit(1)
-        }
-        .foregroundStyle(tint)
-        .padding(.horizontal, 16).padding(.vertical, 9)
-        .background(Capsule().fill(tint.opacity(0.18))
-            .overlay(Capsule().strokeBorder(tint.opacity(0.35), lineWidth: 1)))
+    private func sweep(_ on: Bool) {
+        guard on, !motion.poseStill(reduceMotion) else { phase = 0; return }
+        phase = 0
+        withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) { phase = 1 }
     }
 }
 
