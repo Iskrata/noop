@@ -902,7 +902,9 @@ final class HealthKitBridge: ObservableObject {
     /// write-back only reaches `minDays` back, so older nights would keep the lowest-5-min-bin value they were
     /// written with. Our own resting-HR samples over the span are deleted first — scoped to `HKSource.default()`,
     /// so a WHOOP or Apple Watch value is never touched — which also clears any written under an older key
-    /// scheme; then the vitals are written across the same span.
+    /// scheme; then the vitals are written across the same span. A failed delete throws, so the caller keeps
+    /// the owed flag and the rewrite runs again on the next write-back; "nothing matched" is not a failure.
+    /// Without sharing permission for resting HR there is nothing this app may delete, so only the write runs.
     private func rewriteRestingHR(whoopStore: WhoopStore, minDays: Int, sessions: [CachedSleepSession],
                                   holdingDays: Set<String>) async throws {
         let computedDays = (try? await whoopStore.dailyMetrics(deviceId: computedDeviceId, from: "0000-01-01",
@@ -918,7 +920,11 @@ final class HealthKitBridge: ObservableObject {
                 HKQuery.predicateForObjects(from: HKSource.default()),
                 HKQuery.predicateForSamples(withStart: Calendar.current.startOfDay(for: from), end: Date(), options: []),
             ])
-            _ = try? await store.deleteObjects(of: type, predicate: pred)
+            do {
+                _ = try await store.deleteObjects(of: type, predicate: pred)
+            } catch let error as HKError where error.code == .errorNoData {
+                // Nothing of ours in the span: the cleanup is already done.
+            }
         }
         try await writeVitals(whoopStore: whoopStore, days: days, sessions: sessions, holdingDays: holdingDays)
     }

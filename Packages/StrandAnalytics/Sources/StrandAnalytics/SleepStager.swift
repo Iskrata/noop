@@ -1593,14 +1593,17 @@ public enum SleepStager {
                                                 bandSleepState: bandSleepState)
             let eff = efficiency(start: p.start, end: p.end, stages: stages)
             let avgHrv = sessionAvgHRV(start: p.start, end: p.end, rr: rrS)
+            let reportedRestingHR = sessionDeepSleepRestingHR(start: p.start, end: p.end, hr: hrS, stages: stages)
             sessions.append(SleepSession(start: p.start, end: p.end, efficiency: eff,
                                          stages: stages,
-                                         restingHR: sessionDeepSleepRestingHR(start: p.start, end: p.end,
-                                                                              hr: hrS, stages: stages),
+                                         restingHR: reportedRestingHR,
                                          avgHRV: avgHrv))
+            // `restingHR` is what the session reports (the deep-sleep mean); `floor` is the lowest bin the
+            // daytime guard above tested, the same naming as the `rhr day=` line.
             traceSink?(GateTrace.runLine(index: runIndex, startTs: p.start, endTs: p.end,
                 verdict: .kept, gate: "accepted",
-                detail: "spanMin=\(spanMin) eff=\(round2(eff)) restingHR=\(resting ?? -1) daytime=\(isDaytime)"))
+                detail: "spanMin=\(spanMin) eff=\(round2(eff)) restingHR=\(reportedRestingHR ?? -1) "
+                    + "floor=\(resting ?? -1) daytime=\(isDaytime)"))
             // #1210 shadow: the band wake-veto is dormant (default-off), but its recovered-vs-reverse ratio
             // can only come from banded nights. When a band stream is present, compute what the veto WOULD
             // recover and trace it — OUTPUT-NEUTRAL: `stages`/`eff` persisted above are the flag-gated
