@@ -3269,7 +3269,7 @@ object SleepStager {
 
     /**
      * Mean RMSSD over 5-min tumbling windows across the session (ms), or null.
-     * Uses the same range-filter + ≥2-valid-interval rule as hrv.rmssd().
+     * A window counts only with [HrvAnalyzer.MIN_BEATS] clean intervals (see [sessionHrvWindows]).
      */
     internal fun sessionAvgHRV(start: Long, end: Long, rr: List<RrInterval>): Double? {
         val vals = sessionHrvWindows(start, end, rr, emptyList()).mapNotNull { it.rmssd }
@@ -3337,7 +3337,12 @@ object SleepStager {
             // spurious successive difference, which is the exact spike the rejection above is meant to
             // remove. See HrvAnalyzer.rmssdGapAware.
             val cleaned = HrvAnalyzer.cleanRRGapAware(bucket)
-            val rmssd = if (cleaned.nn.size >= 2) HrvAnalyzer.rmssdGapAware(cleaned.nn, cleaned.contiguous) else null
+            // The same MIN_BEATS floor the spot reading and the SDNN index apply. The night is a plain mean
+            // over windows, so without it a window left with a handful of clean beats (a dropout, a
+            // movement-shredded stretch, a short final window) weighed as much as a full five minutes.
+            val rmssd = if (cleaned.nn.size >= HrvAnalyzer.MIN_BEATS) {
+                HrvAnalyzer.rmssdGapAware(cleaned.nn, cleaned.contiguous)
+            } else null
             val center = t + windowS / 2
             val stage = stages.firstOrNull { center >= it.start && center < it.end }?.stage ?: "?"
             out.add(HrvWindow(startTs = t, stage = stage, cleanBeats = cleaned.nn.size, rmssd = rmssd))
