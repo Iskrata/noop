@@ -940,6 +940,14 @@ final class HealthKitBridge: ObservableObject {
             )
             candidates.append(Candidate(type: type, key: key, sample: sample))
         }
+        // Keys of OUR earlier samples to delete with no replacement: a value this build no longer writes
+        // must not survive from a build that did.
+        var retracted: [HKQuantityType: [String]] = [:]
+        func retract(_ id: HKQuantityTypeIdentifier, _ day: String) {
+            guard let type = HKQuantityType.quantityType(forIdentifier: id),
+                  store.authorizationStatus(for: type) == .sharingAuthorized else { return }
+            retracted[type, default: []].append(HealthWriteback.appleHealthVitalKey(metricId: id.rawValue, day: day))
+        }
 
         for row in rows {
             guard let date = HealthKitBridge.date(from: row.day) else { continue }
@@ -948,16 +956,21 @@ final class HealthKitBridge: ObservableObject {
             if let rhr = row.restingHr {
                 add(.restingHeartRate, HKUnit.count().unitDivided(by: .minute()), Double(rhr), row.day, at)
             }
-            // Export the GENUINE SDNN (v31) when present — the strap's `avgHrv` is RMSSD, which HealthKit
-            // has no field for, so writing it under `.heartRateVariabilitySDNN` mislabels it. `avgSdnn` is the
-            // 5-min SDNN index, deliberately window-matched to Apple's own short-window SDNN samples so the
-            // written values sit consistently in the user's Health SDNN history (a whole-night SD would land
-            // 2-3× high). WHOOP rows backfill `avgSdnn` from stored raw R-R on the next re-score; Apple rows'
-            // `avgHrv` already IS SDNN. The `avgHrv` fallback fires for those two before re-scoring, and
-            // permanently for summary-only sources (Oura) that give RMSSD with no raw R-R to derive SDNN from
-            // — HealthKit's single HRV type leaves no better label there.
-            if let sdnn = row.avgSdnn ?? row.avgHrv {
+            // Export only the GENUINE SDNN (v31). `avgSdnn` is the 5-min SDNN index, deliberately
+            // window-matched to Apple's own short-window SDNN samples so the written values sit consistently
+            // in the user's Health SDNN history (a whole-night SD would land 2-3× high).
+            //
+            // No `avgHrv` fallback (#2264). Every row here is a strap-computed or WHOOP-imported daily (rows
+            // imported FROM Apple Health live under `appleDeviceId` and are never read back out), so `avgHrv` is always
+            // RMSSD — a different magnitude that HealthKit has no type for. Writing it under
+            // `.heartRateVariabilitySDNN` put a step into the series that no physiology produced, and a
+            // Health reader that scores off SDNN took it at face value. A night without an SDNN (not yet
+            // re-scored from raw R-R, or a summary-only source such as Oura) exports no HRV instead, and any
+            // mislabelled sample an earlier build wrote for that day is retracted.
+            if let sdnn = row.avgSdnn {
                 add(.heartRateVariabilitySDNN, .secondUnit(with: .milli), sdnn, row.day, at)
+            } else {
+                retract(.heartRateVariabilitySDNN, row.day)
             }
             if let spo2 = row.spo2Pct {
                 add(.oxygenSaturation, .percent(), spo2 / 100, row.day, at)
@@ -966,21 +979,23 @@ final class HealthKitBridge: ObservableObject {
                 add(.respiratoryRate, HKUnit.count().unitDivided(by: .minute()), rr, row.day, at)
             }
         }
-        guard !candidates.isEmpty else { return }
+        guard !candidates.isEmpty || !retracted.isEmpty else { return }
 
         // Delete any of OUR prior samples that carry the same metadata keys, then write the fresh
         // batch. Scoped to HKSource.default() so we never touch a sample written by another app
         // that happens to use the same external UUID. Delete failures are non-fatal (e.g., nothing
         // to delete on first run) — only the save throws.
         let bySource = HKQuery.predicateForObjects(from: HKSource.default())
-        let grouped = Dictionary(grouping: candidates, by: { $0.type })
-        for (type, items) in grouped {
-            let keys = Array(Set(items.map { $0.key }))
+        var keysByType = Dictionary(grouping: candidates, by: { $0.type }).mapValues { $0.map { $0.key } }
+        for (type, keys) in retracted { keysByType[type, default: []] += keys }
+        for (type, allKeys) in keysByType {
+            let keys = Array(Set(allKeys))
             let byKey = HKQuery.predicateForObjects(withMetadataKey: HKMetadataKeyExternalUUID,
                                                     allowedValues: keys)
             let pred = NSCompoundPredicate(andPredicateWithSubpredicates: [bySource, byKey])
             _ = try? await self.store.deleteObjects(of: type, predicate: pred)
         }
+        guard !candidates.isEmpty else { return }
         try await self.store.save(candidates.map { $0.sample })
     }
 
