@@ -3003,7 +3003,7 @@ public enum SleepStager {
     }
 
     /// Mean RMSSD over 5-min tumbling windows across the session (ms), or nil.
-    /// Uses the same range-filter + ≥2-valid-interval rule as hrv.rmssd().
+    /// A window counts only with `HRVAnalyzer.minBeats` clean intervals (see `sessionHrvWindows`).
     static func sessionAvgHRV(start: Int, end: Int, rr: [RRInterval]) -> Double? {
         let vals = sessionHrvWindows(start: start, end: end, rr: rr, stages: []).compactMap { $0.rmssd }
         if vals.isEmpty { return nil }
@@ -3065,7 +3065,11 @@ public enum SleepStager {
             // #204/#195: gap-aware — a successive difference straddling a dropped beat is skipped so a
             // removed out-of-range/ectopic beat can't splice its neighbours into a spurious delta.
             let cleaned = HRVAnalyzer.cleanRRGapAware(bucket)
-            let rmssd: Double? = (cleaned.nn.count >= 2) ? HRVAnalyzer.rmssdGapAware(cleaned.nn, cleaned.contiguous) : nil
+            // The same `minBeats` floor the spot reading and the SDNN index apply. The night is a plain mean
+            // over windows, so without it a window left with a handful of clean beats (a dropout, a
+            // movement-shredded stretch, a short final window) weighed as much as a full five minutes.
+            let rmssd: Double? = (cleaned.nn.count >= HRVAnalyzer.minBeats)
+                ? HRVAnalyzer.rmssdGapAware(cleaned.nn, cleaned.contiguous) : nil
             let center = t + windowS / 2
             let stage = stages.first { center >= $0.start && center < $0.end }?.stage ?? "?"
             out.append(HrvWindow(startTs: t, stage: stage, cleanBeats: cleaned.nn.count, rmssd: rmssd))
