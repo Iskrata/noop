@@ -87,23 +87,32 @@ extension AICoachEngine {
     // MARK: Sleep week
 
     private static let sleepInstruction = """
-    Above are my last nights of sleep. Give me actionable tips to raise my sleep score next week.
+    Above are my last nights of sleep; the LAST line is last night. Coach me on it.
     Rules:
-    - At most 3 tips, one per line, each starting with "- ", a verb, at most 24 words. Nothing else.
-    - Lead with the biggest lever. My score weighs hours vs need, bed/wake consistency and efficiency.
-    - Tie each tip to a number from the data (e.g. "bedtimes span 1h50", "6.4h vs 8.1h need", "efficiency 84%").
+    - Exactly 3 lines, one per line, each starting with "- ", at most 24 words. Nothing else.
+    - Line 1 is about last night only: how it went against my need and my recent nights, with one number, \
+    and what that means for today (energy, a nap, tonight's bedtime).
+    - Lines 2 and 3 are the biggest levers from the recent nights: a trend, a pattern, or what to improve. \
+    Start each with a verb. My score weighs hours vs need, bed/wake consistency and efficiency.
+    - Tie each line to a number from the data (e.g. "bedtimes span 1h50", "6.4h vs 8.1h need", "efficiency 84%").
     - Be concrete: a target bedtime and wake time from my own pattern, caffeine cutoff, alcohol, late training, \
     wind-down, bedroom temperature, naps.
-    - If sleep is already strong, say so in one line and name the one thing to protect.
+    - If sleep is already strong, one of lines 2 and 3 says so and names the one thing to protect.
     """
+
+    /// Bumped when the sleep prompt changes, so the day's tips are rewritten once under the new rules.
+    private static let sleepPromptVersion = "v2"
 
     /// Tips for the week ending on `wakeDay` (the latest scored night).
     func sleepWeekTips(wakeDay: String) async -> [String]? {
-        let reply = await cachedReply(slot: "sleep", fingerprint: wakeDay, prompt: {
+        let reply = await cachedReply(slot: "sleep", fingerprint: Self.sleepFingerprint(wakeDay), prompt: {
             let to = Int(Date().timeIntervalSince1970), from = to - 8 * 86_400
-            var sessions = await self.repo.sleepSessions(from: from, to: to)
-            if sessions.isEmpty { sessions = await self.repo.computedSleepSessions(from: from, to: to) }
-            let digest = Self.sleepWeekDigest(days: self.repo.days, sessions: sessions,
+            // Both sources: nights imported from Apple Health can lag the strap's own, and last night must
+            // carry its bed and wake times. The digest keeps the longest session per wake day.
+            let sessions = await self.repo.sleepSessions(from: from, to: to)
+                + self.repo.computedSleepSessions(from: from, to: to)
+            // Nights up to `wakeDay` only: its line must be the digest's last, even with a newer night open.
+            let digest = Self.sleepWeekDigest(days: self.repo.days.filter { $0.day <= wakeDay }, sessions: sessions,
                                               needHours: PersonalSleepScore.needHours(),
                                               score: { PersonalSleepScore.composite($0) },
                                               consistency: { PersonalSleepScore.consistency(day: $0) })
@@ -112,8 +121,10 @@ extension AICoachEngine {
         return reply.map { Self.tipLines($0, max: 3) }
     }
 
+    static func sleepFingerprint(_ wakeDay: String) -> String { wakeDay + "|" + sleepPromptVersion }
+
     func cachedSleepWeekTips(wakeDay: String) -> [String]? {
-        cachedReply(slot: "sleep", fingerprint: wakeDay).map { Self.tipLines($0, max: 3) }
+        cachedReply(slot: "sleep", fingerprint: Self.sleepFingerprint(wakeDay)).map { Self.tipLines($0, max: 3) }
     }
 
     /// The last 7 nights: bed/wake (local), hours vs need, efficiency, stages, score, consistency, HRV, RHR,

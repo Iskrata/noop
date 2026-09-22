@@ -253,6 +253,9 @@ final class IntelligenceEngine: ObservableObject {
         /// written as "rhr_primary_session_valid_samples" / "rhr_primary_session_duration_s" in pass 2. nil
         /// in lockstep with `primarySessionRHR`.
         let primarySessionRHRCoverage: PrimarySessionRestingHR.Coverage?
+        /// Fork: the newest heart-rate timestamp this scan read (0 when none), so `OpenNight` can tell a
+        /// night that ended from one that stops where the synced data stops.
+        let newestHeartRateTs: Int
     }
 
     /// Exact pre-upgrade R-R-derived cells retained only while an unlabelled WHOOP 5 window is withheld.
@@ -1778,7 +1781,8 @@ final class IntelligenceEngine: ObservableObject {
                                    spo2Candidate: spo2CandidateMean,
                                    hrvOverCounted: hrvOverCounted,
                                    primarySessionRHR: primarySessionRHR,
-                                   primarySessionRHRCoverage: primarySessionRHRCoverage)
+                                   primarySessionRHRCoverage: primarySessionRHRCoverage,
+                                   newestHeartRateTs: hr.last?.ts ?? 0)
                 // #1005: cache this freshly-scored scan under its per-day key (only when the day was
                 // cache-eligible this pass, i.e. a registered WHOOP owner with no trace active). Reused
                 // days `continue`d above and never reach here, so the cache only ever holds fresh scans.
@@ -1881,6 +1885,8 @@ final class IntelligenceEngine: ObservableObject {
         var primarySessionRHRByDay: [String: Double] = [:]
         // #1169: its coverage inputs (valid-sample count + primary-session duration), same lifetime as the mean.
         var primarySessionRHRCoverageByDay: [String: PrimarySessionRestingHR.Coverage] = [:]
+        // Fork: each day's heart-rate frontier as its scan read it, for `OpenNight`.
+        var newestHeartRateByDay: [String: Int] = [:]
 
         // Back on the main actor: fold the off-actor results into the pass-2 state in the SAME order the
         // loop produced them. Pure assignment / appends , no further store reads , so this is cheap and the
@@ -1888,6 +1894,7 @@ final class IntelligenceEngine: ObservableObject {
         for scan in scanned {
             let res = scan.result
             readOwnerByDay[res.daily.day] = (scan.readOwner, scan.hrRows)
+            newestHeartRateByDay[res.daily.day] = scan.newestHeartRateTs
             resolvedScoreOwnerByDay[res.daily.day] = scan.readOwner
             nightlyHrvByDay[res.daily.day] = res.daily.avgHrv
             nightlyRhrByDay[res.daily.day] = res.daily.restingHr.map(Double.init)
@@ -1944,6 +1951,13 @@ final class IntelligenceEngine: ObservableObject {
                 store: store, importedId: deviceId, computedId: deviceId + "-noop",
                 from: nowLocalMidnight - (maxDays + 4) * 86_400, to: now, offsetSec: tzOffset,
                 fresh: freshSleep))
+        // Fork: whether the latest night may still be growing (`OpenNight`), read by Today, Sleep and the
+        // Coach so they show its scores once, after it closes.
+        OpenNight.publish(OpenNight.probe(
+            nights: scoredNights.map { n in
+                (day: n.daily.day, sleeps: n.cachedSleep.filter { s in freshSleep.contains { $0.startTs == s.startTs } })
+            },
+            newestHeartRateByDay: newestHeartRateByDay))
         // ── Seed the baseline from the UNION of imported nightly history + the values just computed.
         // THIS is the BLE-only recovery fix: the "-noop" nightly avgHrv/restingHr finally feed the
         // baseline so a strap-only user crosses Baselines.minNightsSeed and recovery lights up.

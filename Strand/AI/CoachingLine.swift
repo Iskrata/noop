@@ -21,11 +21,17 @@ extension AICoachEngine {
     - Light pirate flavour: at most one pirate word ("arr", "matey", "ship-shape"), the advice stays plain.
     """
 
+    /// Bumped when what the line is written from changes, so the day's line is rewritten once. v2: written
+    /// only from today's own scores after the night closes (`OpenNight`); v1 could be written from a
+    /// carried Charge or a night still being recorded ("short sleep at 4.9h" on an 8.4 h night).
+    private static let coachingVersion = "v2"
+
     /// Today's line: the cached one, or — once `charge` and `rest` are both known — one request per day.
     func coachingLine(dayKey: String, charge: Double?, rest: Double?) async -> String? {
-        if let cached = cachedReply(slot: "today", fingerprint: dayKey) { return cached }
+        let fingerprint = dayKey + "|" + Self.coachingVersion
+        if let cached = cachedReply(slot: "today", fingerprint: fingerprint) { return cached }
         guard let charge, let rest else { return nil }   // scores not in yet — wait for the fresh ones
-        return await cachedReply(slot: "today", fingerprint: dayKey, prompt: {
+        return await cachedReply(slot: "today", fingerprint: fingerprint, prompt: {
             let digest = Self.coachingDigest(days: self.repo.days, dayKey: dayKey, charge: charge, rest: rest)
             return digest + "\n\n" + (await self.buildFullContext()) + "\n\n---\n\n" + Self.coachingInstruction
         }, accept: Self.shortenedCoachingLine)

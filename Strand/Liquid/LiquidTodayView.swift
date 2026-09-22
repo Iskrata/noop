@@ -55,6 +55,8 @@ struct LiquidTodayView: View {
 
     // async-loaded via the confirmed Repository accessors
     @State private var restScore: Double?          // sleep_performance, day-keyed
+    /// Fork: today's night may still be growing (`OpenNight`), so its Charge, Sleep and coaching line wait.
+    @State private var nightOpen = false
     /// Input providers for the three scores, keyed by recovery / strain / sleep_performance.
     @State private var heroProviderByMetric: [String: ScoreInputProvider] = [:]
     @State private var stress: Double?             // StressModel(...).score, 0–3
@@ -610,8 +612,11 @@ struct LiquidTodayView: View {
     private var coachingFingerprint: String {
         let charge = chargeDisplay.pct.map { String(Int($0.rounded())) } ?? "-"
         let rest = restScore.map { String(Int($0.rounded())) } ?? "-"
-        return "\(selectedDayKey)|\(charge)|\(rest)"
+        return "\(selectedDayKey)|\(charge)|\(rest)|\(nightOpen)"
     }
+
+    /// The coaching slot while today's night is still open (`OpenNight`).
+    private static let nightOpenLine = String(localized: "Still recording last night. Your scores land once you've been up a little while.")
 
     /// "Today, September 19" — the relative day word plus the date, Bevel's header.
     private var headerTitle: String {
@@ -663,7 +668,8 @@ struct LiquidTodayView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("COACHING").font(StrandFont.overline).tracking(1.6)
                         .foregroundStyle(StrandPalette.textTertiary)
-                    Text(chargeDisplay.calibrationDetail ?? aiCoachingLine ?? synthLine)
+                    Text(chargeDisplay.calibrationDetail ?? (nightOpen ? Self.nightOpenLine : nil)
+                         ?? aiCoachingLine ?? synthLine)
                         .font(StrandFont.body).foregroundStyle(StrandPalette.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -672,7 +678,10 @@ struct LiquidTodayView: View {
                 // score change only to pick up that first moment. Today only; past days keep the on-device line.
                 .task(id: coachingFingerprint) {
                     guard selectedDayOffset == 0 else { aiCoachingLine = nil; return }
-                    aiCoachingLine = await coach.coachingLine(dayKey: selectedDayKey, charge: chargeDisplay.pct, rest: restScore)
+                    // Only today's OWN scores: a carried Charge or Rest is last night's, and a line written
+                    // from it (or from a night still being recorded) is kept all day.
+                    guard !nightOpen, case .scored(let charge) = chargeDisplay else { aiCoachingLine = nil; return }
+                    aiCoachingLine = await coach.coachingLine(dayKey: selectedDayKey, charge: charge, rest: restScore)
                 }
             }
         }
@@ -1450,6 +1459,10 @@ struct LiquidTodayView: View {
         // Prior-day vitals carry, resolved ONCE here (never in body). Bound to today's own key so it can't
         // echo today's still-forming row; only on today (a past day's own row is the whole story).
         let tkey = cachedDisplayDay?.day ?? selectedDayKey
+        // Fork: while today's night is still open its provisional Charge is not today's score; the carry
+        // (last night's real one) stands in until the night closes (`OpenNight`).
+        nightOpen = selectedDayOffset == 0 && OpenNight.isOpen(day: tkey)
+        let dayRecovery = nightOpen ? nil : day?.recovery
         cachedVitalsDay = (selectedDayOffset == 0) ? Repository.lastVitalsDay(days: repo.days, todayKey: tkey) : nil
         cachedRespDay = (selectedDayOffset == 0) ? Repository.lastRespDay(days: repo.days, todayKey: tkey) : nil
         cachedHrvDay = (selectedDayOffset == 0) ? Repository.lastHrvDay(days: repo.days, todayKey: tkey) : nil
@@ -1462,16 +1475,16 @@ struct LiquidTodayView: View {
         let calNights = (selectedDayOffset == 0)
             ? RecoveryScorer.calibrationNights(nightlyHrv: repo.days.map(\.avgHrv),
                                                dayKeys: repo.days.map(\.day),
-                                               hasRecovery: day?.recovery != nil)
+                                               hasRecovery: dayRecovery != nil)
             : nil
         let priorScored = TodayView.lastScoredRecoveryDay(
             days: repo.days, selectedDayKey: tkey,
             isToday: selectedDayOffset == 0,
-            todayScored: day?.recovery != nil,
+            todayScored: dayRecovery != nil,
             isCalibrating: calNights != nil
         )
         cachedChargeDisplay = ChargeDisplay.resolve(
-            todayRecovery: day?.recovery,
+            todayRecovery: dayRecovery,
             priorScored: priorScored,
             calibrationNights: calNights,
             todayKey: tkey)
@@ -1536,7 +1549,9 @@ struct LiquidTodayView: View {
         async let restSourceA = repo.resolvedSeries(key: "sleep_performance", source: Repository.whoopSource,
                                                     from: sourceDayKey, to: sourceDayKey)
 
-        let restSeries = await restA
+        // Fork: an open night's provisional Sleep score is left out, so the tail fallback below shows the
+        // last closed night's until it closes (`OpenNight`).
+        let restSeries = (await restA).filter { !(nightOpen && $0.day == selectedDayKey) }
         let stepsSeries = await stepsA
         let restByDay = Dictionary(restSeries.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
         // Selected day's Rest; tail fallback only at offset 0 (a past day with no row shows nothing) AND
