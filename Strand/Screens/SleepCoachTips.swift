@@ -7,11 +7,7 @@ struct SleepCoachTips: View {
     @EnvironmentObject var repo: Repository
     @EnvironmentObject var coach: AICoachEngine
 
-    /// The latest night that is in and closed: one still being recorded (`OpenNight`) waits, so the tips
-    /// are written once, from the whole night.
-    private var wakeDay: String? {
-        repo.days.last(where: { $0.totalSleepMin != nil && !OpenNight.isOpen(day: $0.day) })?.day
-    }
+    private var wakeDay: String? { AICoachEngine.sleepTipsWakeDay(days: repo.days) }
 
     var body: some View {
         if let wakeDay, coach.canSendCoachData {

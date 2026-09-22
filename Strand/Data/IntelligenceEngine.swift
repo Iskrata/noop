@@ -308,6 +308,8 @@ final class IntelligenceEngine: ObservableObject {
     /// `AppModel` wires it to `live.append(log:domain:)`. Each line is a concise, counts-only summary,
     /// optionally tagged with the TestDomain so the Sleep/Battery emitters land under their profile tag.
     var diagnosticSink: ((String, TestDomain?) -> Void)?
+    /// Fork: called when a pass ends, after its scores are persisted and the repository refreshed.
+    var onPassFinished: (() -> Void)?
 
     init(repo: Repository, profile: ProfileStore, deviceId: String) {
         self.repo = repo; self.profile = profile; self.deviceId = deviceId
@@ -848,6 +850,7 @@ final class IntelligenceEngine: ObservableObject {
         defer {
             computing = false
             runningPassStart = nil
+            onPassFinished?()
             if pendingForcedRescore {
                 pendingForcedRescore = false
                 // Carry THIS pass's window into the re-pass: a heal firing during a wide one-shot pass
