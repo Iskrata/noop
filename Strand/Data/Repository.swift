@@ -585,13 +585,9 @@ final class Repository: ObservableObject {
     /// on. The `$0.day < carriedKey` bound (`carriedKey` = today's own key) mirrors
     /// `TodayView.lastScoredRecoveryDay` + its #547 future-day guard, so a stale or stray future-dated
     /// scored row can never re-surface AS today.
-    ///
-    /// Fork: `nightOpen` says whether a day's night is still being recorded (`OpenNight`); such a day is
-    /// carried over like an unscored one, so the widget, wrist and Live Activity wait for it as Today does.
-    nonisolated static func widgetAnchor(days: [DailyMetric], logicalKey: String, localKey: String,
-                                         nightOpen: (String) -> Bool = { _ in false }) -> DailyMetric? {
+    nonisolated static func widgetAnchor(days: [DailyMetric], logicalKey: String, localKey: String) -> DailyMetric? {
         let todayRow = resolveToday(days: days, logicalKey: logicalKey, localKey: localKey)
-        if let row = todayRow, row.recovery != nil, !nightOpen(row.day) { return row }
+        if todayRow?.recovery != nil { return todayRow }
         let carriedKey = todayRow?.day ?? logicalKey
         return days.last(where: { $0.recovery != nil && $0.day < carriedKey })
     }
@@ -603,8 +599,7 @@ final class Repository: ObservableObject {
     /// publish, the watch snapshot build, the Live Activity onReceive closures) already runs on the
     /// MainActor. Tests call the pure 3-arg overload above instead.
     static func widgetAnchor(days: [DailyMetric], now: Date = Date()) -> DailyMetric? {
-        widgetAnchor(days: days, logicalKey: logicalDayKey(now), localKey: localDayKey(now),
-                     nightOpen: { OpenNight.isOpen(day: $0, now: now) })
+        widgetAnchor(days: days, logicalKey: logicalDayKey(now), localKey: localDayKey(now))
     }
 
     /// #1051-shaped memo for the anchor resolve on the high-frequency live surfaces. Not @Published — pure
@@ -621,8 +616,7 @@ final class Repository: ObservableObject {
             seq: refreshSeq,
             logicalKey: Self.logicalDayKey(now),
             localKey: Self.localDayKey(now)
-        ) { Repository.widgetAnchor(days: $0, logicalKey: $1, localKey: $2,
-                                    nightOpen: { OpenNight.isOpen(day: $0, now: now) }) }
+        ) { Repository.widgetAnchor(days: $0, logicalKey: $1, localKey: $2) }
     }
 
     /// The recovery-INDEPENDENT overnight-vitals carry (the durable fix for the v8 Today rollover blank):

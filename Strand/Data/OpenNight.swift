@@ -2,16 +2,17 @@ import Foundation
 import StrandImport
 import WhoopStore
 
-/// Fork: whether last night may still be growing, so Today, Sleep and the Coach wait for it instead of
-/// showing a score for a night the strap hasn't seen end.
+/// Fork: whether last night may still be growing, so the Coach's once-a-day writing (Today's coaching
+/// line, the Sleep tips) waits for the whole night instead of fixing a partial one for the day.
 ///
 /// A pass scores whatever has synced. Before the morning's backlog lands, or while the wearer is still in
 /// bed, the latest night ends at the newest synced heart rate and every later pass lengthens it. On
 /// 2026-09-22 a night slept 00:07 → 08:54 was scored at 331, 376, 416, 417, 487 and 501 min, each a new
-/// Sleep score and Charge, and the day's coaching line was written from a "4.9h" night. The engine
-/// publishes the latest night's end and the newest heart rate its pass read; the night counts as open
-/// while `HealthWriteback.nightIsStillOpen` says so (the rule that already holds it out of Apple Health),
-/// so the scores appear once, after the strap has seen the wearer up for `openNightMarginSeconds`.
+/// Sleep score and Charge, and the day's coaching line was written from a "4.9h" night. The moving scores
+/// stay (each is right for the data so far); the Coach waits. The engine publishes the latest night's end
+/// and the newest heart rate its pass read; the night counts as open while
+/// `HealthWriteback.nightIsStillOpen` says so (the rule that already holds it out of Apple Health), i.e.
+/// until the strap has seen the wearer up for `openNightMarginSeconds`.
 enum OpenNight {
     private static let key = "fork.openNight"
 
@@ -54,7 +55,7 @@ enum OpenNight {
         return Probe(wakeDay: day, endTs: end, newestHeartRateTs: hr)
     }
 
-    /// True while `day`'s night is still open: its scores, coaching line and sleep tips wait.
+    /// True while `day`'s night is still open: its coaching line and sleep tips wait.
     static func isOpen(day: String, now: Date = Date(), defaults: UserDefaults = .standard) -> Bool {
         guard let probe = published(defaults: defaults), probe.wakeDay == day else { return false }
         return probe.isOpen(now: Int(now.timeIntervalSince1970))

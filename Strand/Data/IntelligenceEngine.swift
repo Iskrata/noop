@@ -1954,8 +1954,8 @@ final class IntelligenceEngine: ObservableObject {
                 store: store, importedId: deviceId, computedId: deviceId + "-noop",
                 from: nowLocalMidnight - (maxDays + 4) * 86_400, to: now, offsetSec: tzOffset,
                 fresh: freshSleep))
-        // Fork: whether the latest night may still be growing (`OpenNight`), read by Today, Sleep and the
-        // Coach so they show its scores once, after it closes.
+        // Fork: whether the latest night may still be growing (`OpenNight`), so the Coach writes the day's
+        // line and tips from the whole night.
         OpenNight.publish(OpenNight.probe(
             nights: scoredNights.map { n in
                 (day: n.daily.day, sleeps: n.cachedSleep.filter { s in freshSleep.contains { $0.startTs == s.startTs } })

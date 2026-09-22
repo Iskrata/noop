@@ -3,18 +3,12 @@ import StrandImport
 import WhoopStore
 @testable import Strand
 
-/// Fork: a night still being recorded waits for its scores (`OpenNight`).
+/// Fork: whether last night may still be growing (`OpenNight`), which the Coach waits for.
 final class OpenNightTests: XCTestCase {
     private let end = 1_790_056_466   // 2026-09-22 08:54, the field night that was scored six times
 
     private func session(start: Int, end: Int) -> CachedSleepSession {
         CachedSleepSession(startTs: start, endTs: end, efficiency: nil, restingHr: nil, avgHrv: nil, stagesJSON: nil)
-    }
-
-    private func day(_ key: String, recovery: Double?) -> DailyMetric {
-        DailyMetric(day: key, totalSleepMin: 480, efficiency: nil, deepMin: nil, remMin: nil, lightMin: nil,
-                    disturbances: nil, restingHr: nil, avgHrv: nil, recovery: recovery, strain: nil,
-                    exerciseCount: nil)
     }
 
     func testProbeTakesTheLatestNightAndItsDaysHeartRateFrontier() throws {
@@ -48,24 +42,5 @@ final class OpenNightTests: XCTestCase {
         XCTAssertFalse(OpenNight.isOpen(day: "2026-09-21", now: now, defaults: defaults))
         OpenNight.publish(nil, defaults: defaults)
         XCTAssertFalse(OpenNight.isOpen(day: "2026-09-22", now: now, defaults: defaults))
-    }
-
-    /// The widget, wrist and Live Activity carry last night's scored row while today's night is open.
-    func testWidgetAnchorCarriesWhileTodaysNightIsOpen() {
-        let days = [day("2026-09-21", recovery: 70), day("2026-09-22", recovery: 64)]
-        let open = Repository.widgetAnchor(days: days, logicalKey: "2026-09-22", localKey: "2026-09-22",
-                                           nightOpen: { $0 == "2026-09-22" })
-        XCTAssertEqual(open?.day, "2026-09-21")
-        let closed = Repository.widgetAnchor(days: days, logicalKey: "2026-09-22", localKey: "2026-09-22")
-        XCTAssertEqual(closed?.day, "2026-09-22")
-    }
-
-    func testSleepBannerSaysTheNightIsStillRecording() {
-        XCTAssertEqual(resolveSleepFreshness(hasCurrentNight: true, morningReady: true, syncing: false,
-                                             calculating: false, syncedSinceDayStart: true, syncFailed: false,
-                                             nightOpen: true), .recording)
-        XCTAssertNil(resolveSleepFreshness(hasCurrentNight: true, morningReady: true, syncing: false,
-                                           calculating: false, syncedSinceDayStart: true, syncFailed: false,
-                                           nightOpen: false))
     }
 }

@@ -410,8 +410,6 @@ struct SleepView: View {
     private func performanceScore(for night: Night) -> Double? {
         let wakeDay = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(night.session.endTs)))
         if let p = repo.importedSleep[wakeDay]?.performancePct { return p }
-        // Fork: a night still being recorded gets its score once it closes (`OpenNight`).
-        if OpenNight.isOpen(day: wakeDay) { return nil }
         guard let daily = repo.days.last(where: { $0.day == wakeDay }) else { return nil }
         return PersonalSleepScore.composite(daily)
     }
@@ -2595,17 +2593,14 @@ struct SleepMarkCard: View {
 /// `LiveState` observation so the chunk count ticks without re-rendering the rest of the Sleep screen.
 enum SleepFreshnessStatus: Equatable {
     case syncing, calculating, syncFailed, awaitingSync, notDetected
-    /// Fork: the current night is in hand but may still be growing (`OpenNight`).
-    case recording
 }
 
 /// Pure priority ladder behind the Sleep status banner. "Missing" is deliberately held until morning so
 /// opening Sleep during the night does not claim a still-in-progress night was missed.
 func resolveSleepFreshness(hasCurrentNight: Bool, morningReady: Bool, syncing: Bool,
                            calculating: Bool, syncedSinceDayStart: Bool,
-                           syncFailed: Bool, nightOpen: Bool = false) -> SleepFreshnessStatus? {
+                           syncFailed: Bool) -> SleepFreshnessStatus? {
     if syncing { return .syncing }
-    if hasCurrentNight && nightOpen { return .recording }
     // #2108: a night already in hand outranks .calculating. It used to sit below, so `hasCurrentNight`
     // could only silence the missing-night states and a finished night was structurally unable to
     // silence this one: the banner said "detecting and staging the night now" directly above that same
@@ -2645,18 +2640,11 @@ private struct SleepFreshnessNote: View {
             syncing: live.backfilling,
             calculating: intelligence.computing || calculationQueued,
             syncedSinceDayStart: (live.lastSyncedAt ?? 0) >= start.timeIntervalSince1970,
-            syncFailed: live.lastSyncError != nil,
-            nightOpen: latestWakeTs.map {
-                OpenNight.isOpen(day: Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval($0))), now: now)
-            } ?? false
+            syncFailed: live.lastSyncError != nil
         )
         switch status {
         case .syncing:
             SyncingHistoryNote(chunks: live.syncChunksThisSession)
-        case .recording:
-            DataPendingNote(title: "Still recording last night",
-                            message: "NOOP scores the night once the strap has seen you up for a little while, so the score only lands once.",
-                            symbol: "moon.zzz")
         case .calculating:
             DataPendingNote(title: "Calculating last night's sleep…",
                             message: "Your strap history is in. NOOP is detecting and staging the night now.",
