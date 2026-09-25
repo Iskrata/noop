@@ -44,6 +44,10 @@ stages, HRV, resting HR, heartbeat series). Charge/Effort/Rest themselves are no
   OpenAI key and Coach data consent.
 - Today COACHING line: one short sentence from the Coach, built on a today-vs-7/30-day digest, generated once
   per day after Charge and Rest are both in (`Strand/AI/CoachingLine.swift`).
+- Heart & Breathing (`HeartBreathingStore`, Lab section, Today banner): irregular-rhythm (`AFibDetector`, Petrėnas
+  2015) and breathing-disturbance (`CvhrDetector`, Hayano ACAT) screens over the strap's R-R, run after each re-score
+  pass, stored in metricSeries. The banner shows only a repeating pattern; no notification, no strap buzz, nothing
+  written to Apple Health. Validation: `docs/fork/HEART_BREATHING.md`.
 - Stale-sync notification, heartbeat export toggle, MetricKit exit-reason logging.
 
 ## Working rules from the owner
