@@ -37,6 +37,7 @@ struct BiologyView: View {
                                onScan: { showingScan = true },
                                onAdd: { showingEditor = true })
             if loaded, let day = selectedDay ?? reportDays.first { BiologyCoachTips(day: day, rows: loadedRows) }
+            HeartBreathingSection().padding(.top, NoopMetrics.sectionGap - 20)
             if !loaded {
                 ComingSoon(what: "Reading your results…", symbol: "drop.fill")
             } else if markers.isEmpty {

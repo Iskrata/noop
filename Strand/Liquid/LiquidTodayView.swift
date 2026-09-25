@@ -337,6 +337,8 @@ struct LiquidTodayView: View {
                     // the same one Android pins it to (TodayScreen.kt) — so a warning cannot be reordered
                     // below the fold. Renders nothing when model.healthAlert is nil.
                     HealthAlertBanner()
+                    // Fork: a repeating irregular-rhythm or breathing-disturbance pattern (HeartBreathingStore).
+                    HeartBreathingBanner()
                     // #105: the live "workout in progress" card, dropped in the liquid Home rewrite. Restored
                     // here as the SAME leaf the classic TodayView renders (and Android's WorkoutInProgressCard),
                     // pinned above the reorderable block so an active manual workout is immediately visible

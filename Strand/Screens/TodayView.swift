@@ -1460,8 +1460,10 @@ struct TodayView: View {
                 // battery (right). Replaces the big title + the full-width day-nav pill (WHOOP-style).
                 todayTopBar
                 HealthAlertBanner()
+                HeartBreathingBanner()
                 #else
                 HealthAlertBanner()
+                HeartBreathingBanner()
                 // Browse past days: chevrons + a date jump capped at today (no future days). Anchored to
                 // the LOGICAL day (the same anchor `selectedLogicalDay` uses) so the full-date label tracks
                 // the data shown in the 00:00-04:00 window instead of jumping a calendar day ahead (#14).
