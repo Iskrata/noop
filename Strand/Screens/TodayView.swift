@@ -1474,10 +1474,15 @@ struct TodayView: View {
                 // Compact top bar: profile/settings (left) · ‹ Today › day-nav (centre, bold) · strap
                 // battery (right). Replaces the big title + the full-width day-nav pill (WHOOP-style).
                 todayTopBar
-                HealthAlertBanner()
+                // #2533: the illness banner describes the LATEST day, so it shows only on today and only
+                // when today is that day. The fork's Heart & Breathing banner is not day-gated: it reports a
+                // repeating pattern across nights, not one day's verdict.
+                if selectedDayOffset == 0, let currentDay = repo.today?.day,
+                   currentDay == repo.days.last?.day { HealthAlertBanner() }
                 HeartBreathingBanner()
                 #else
-                HealthAlertBanner()
+                if selectedDayOffset == 0, let currentDay = repo.today?.day,
+                   currentDay == repo.days.last?.day { HealthAlertBanner() }
                 HeartBreathingBanner()
                 // Browse past days: chevrons + a date jump capped at today (no future days). Anchored to
                 // the LOGICAL day (the same anchor `selectedLogicalDay` uses) so the full-date label tracks
