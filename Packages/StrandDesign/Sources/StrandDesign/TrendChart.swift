@@ -72,6 +72,40 @@ public struct TrendPoint: Identifiable, Sendable {
     }
 }
 
+private struct WorkoutTimeAxisModifier: ViewModifier {
+    let range: ClosedRange<Date>?
+
+    init(_ range: ClosedRange<Date>?) { self.range = range }
+
+    func body(content: Content) -> some View {
+        if let range {
+            content
+                .chartXScale(domain: range)
+                .chartXAxis {
+                AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                    AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(0.4))
+                    AxisValueLabel {
+                        if let date = value.as(Date.self) {
+                            Text(elapsedLabel(date, start: range.lowerBound))
+                        }
+                    }
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .font(StrandFont.footnote)
+                }
+            }
+        } else {
+            content
+        }
+    }
+
+    private func elapsedLabel(_ date: Date, start: Date) -> String {
+        let elapsed = max(0, Int(date.timeIntervalSince(start)))
+        let minutes = elapsed / 60
+        if minutes >= 60 { return String(format: "%d:%02d", minutes / 60, minutes % 60) }
+        return String(format: String(localized: "%lld minutes"), Int64(minutes))
+    }
+}
+
 public struct TrendChart: View {
 
     public var points: [TrendPoint]
@@ -117,6 +151,8 @@ public struct TrendChart: View {
     /// curve and the top axis label clear of the plot clip (see #974); done purely in data space
     /// so it needs no macOS14/iOS17 plot-dimension padding API — works on our macOS13/iOS16 floor.
     public var yDomain: ClosedRange<Double>?
+    /// Optional elapsed time window for a workout trace, with workout-relative tick labels.
+    public var workoutTimeAxis: ClosedRange<Date>?
 
     /// Mean of all point values, computed once in `init` so the area fill's gradient
     /// stop doesn't run an O(n) reduce for every mark on every render.
@@ -139,6 +175,7 @@ public struct TrendChart: View {
         accessibilityLabel: String? = nil,
         nowCapColor: Color? = nil,
         yDomain: ClosedRange<Double>? = nil,
+        workoutTimeAxis: ClosedRange<Date>? = nil,
         yAxisStep: Double? = nil,
         showsBarValues: Bool = false,
         largeSelection: Bool = false
@@ -157,6 +194,7 @@ public struct TrendChart: View {
         self.accessibilityLabel = accessibilityLabel
         self.nowCapColor = nowCapColor
         self.yDomain = yDomain
+        self.workoutTimeAxis = workoutTimeAxis
         self.yAxisStep = yAxisStep
         self.showsBarValues = showsBarValues
         self.largeSelection = largeSelection
@@ -203,6 +241,10 @@ public struct TrendChart: View {
         sharedDateFormatter.string(from: date)
     }
 
+    private static func axisNumberLabel(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0)))
+    }
+
     /// The point nearest a given chart-local x, using the proxy to map back.
     private func nearestPoint(toX x: CGFloat, proxy: ChartProxy, plot: CGRect) -> TrendPoint? {
         guard !points.isEmpty else { return nil }
@@ -214,6 +256,13 @@ public struct TrendChart: View {
             abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date))
         })
     }
+
+    /// The days the x-axis marks, so the marks and their label format agree about which days are shown.
+    ///
+    /// Spans `displayPoints`, the set the marks are actually built from, rather than `points`. Bucketing
+    /// keeps the extremes, so the two agree today; deriving the axis from a collection the chart is not
+    /// drawing is the kind of thing that stops being true quietly.
+    private var axisDays: [Date] { ChartAxisDays.spanning(displayPoints.map(\.date)) }
 
     // Map data values onto the unit interval for gradient stops.
     private func unit(_ value: Double) -> Double {
@@ -350,13 +399,25 @@ public struct TrendChart: View {
         .chartPlotStyle { plotArea in
             if showsBarValues { plotArea.padding(.top, 18) } else { plotArea.clipped() }
         }
+        // Marks are pinned to WHOLE DAYS, not asked for by count (#2431-style label smear on Trends).
+        //
+        // `.automatic(desiredCount: 5)` is free to choose the stride that best fits the count, and over a
+        // short window the best fit is sub-day: several marks then land inside one calendar day, the label
+        // formats each to a date, and the axis prints "Sep 21" twice over itself. What the screenshot
+        // shows is not crowding but DUPLICATION, which is why more room would not have helped.
+        //
+        // Naming the days outright makes a duplicate structurally impossible: the marks are distinct
+        // start-of-day instants, so no two can format to the same date, whatever the window. The explicit
+        // day-only format keeps a mark from ever printing a time as well.
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 5)) { _ in
+            AxisMarks(values: axisDays) { _ in
                 AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(0.4))
-                AxisValueLabel().foregroundStyle(StrandPalette.textTertiary)
+                AxisValueLabel(format: ChartAxisDays.labelFormat(for: axisDays))
+                    .foregroundStyle(StrandPalette.textTertiary)
                     .font(StrandFont.footnote)
             }
         }
+        .modifier(WorkoutTimeAxisModifier(workoutTimeAxis))
         .chartYAxis {
             if let step = yAxisStep, step > 0 {
                 AxisMarks(position: .leading, values: Array(stride(from: 0.0, through: plotYDomain.upperBound, by: step))) { value in
@@ -366,7 +427,7 @@ public struct TrendChart: View {
                     }
                     AxisValueLabel {
                         if let number = value.as(Double.self) {
-                            Text(number.formatted(.number.precision(.fractionLength(0))))
+                            Text(TrendChart.axisNumberLabel(number))
                                 .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                         }
                     }

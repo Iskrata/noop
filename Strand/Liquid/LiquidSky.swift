@@ -120,11 +120,11 @@ enum LiquidSkyPaint {
     /// The star field. `now` nil poses every star at its resting brightness (no twinkle).
     static func stars(_ ctx: GraphicsContext, _ size: CGSize, amount: Double, now: Double?) {
         let w = size.width, h = size.height
+        guard liquidSkyHasVisibleStars(amount) else { return }
         for s in liquidStars {
-            let baseA = 0.04 + s.z * 0.16
             let tw = now.map { pow(max(0, sin(s.ph + $0 * s.sp)), 6) } ?? 0
-            let o = amount * (baseA + tw * 0.28)
-            if o < 0.02 { continue }
+            let o = liquidStarOpacity(stars: amount, depth: s.z, twinkle: tw)
+            if o < liquidStarMinOpacity { continue }
             let sz = 0.6 + s.z * 0.8
             ctx.fill(Path(CGRect(x: s.x * w, y: s.y * h, width: sz, height: sz)), with: .color(.white.opacity(o)))
         }
@@ -145,6 +145,22 @@ enum LiquidSkyPaint {
     }
 }
 
+/// A star's opacity: the hour's star amount times its depth-scaled base (nearer is brighter) plus its twinkle
+/// (0...1, a sharp flare). Both renders draw with it.
+func liquidStarOpacity(stars: Double, depth: Double, twinkle: Double) -> Double {
+    stars * (0.04 + depth * 0.16 + twinkle * 0.28)
+}
+
+/// Below this opacity a star is not drawn at all.
+let liquidStarMinOpacity = 0.02
+
+/// Whether any star can be drawn at this star amount: the nearest star at the peak of its twinkle reaches
+/// `liquidStarMinOpacity`. Below that the star pass draws nothing, and the sky's frame loop, which exists for the
+/// twinkle, has nothing to animate.
+func liquidSkyHasVisibleStars(_ stars: Double) -> Bool {
+    liquidStarOpacity(stars: stars, depth: 1, twinkle: 1) >= liquidStarMinOpacity
+}
+
 struct LiquidSky: View {
     /// Hour of day 0...24. Defaults to live time when nil.
     var hour: Double?
@@ -153,7 +169,7 @@ struct LiquidSky: View {
     var settleStrength: Double = 1
     @Environment(\.colorScheme) private var scheme
     /// The call site already swaps in `LiquidSkyStatic` when motion is unwanted, but this view carried
-    /// no gate of its own — a second call site would have been silently ungated. `paused:` makes the
+    /// no gate of its own — a second call site would have been silently ungated. `pausesFrames` makes the
     /// frame loop stand down from inside, so the gate travels with the view.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var motion = NoopMotionState.shared
@@ -177,24 +193,36 @@ struct LiquidSky: View {
         // The live hour moves once a minute, so the layers that depend on it repaint once a minute.
         TimelineView(.everyMinute) { _ in
             let dark = scheme == .dark
-            let S = liquidSkyAt(hour ?? LiquidSkyPaint.liveHour(), light: !dark)
+            let h = hour ?? LiquidSkyPaint.liveHour()
+            let S = liquidSkyAt(h, light: !dark)
             let settle = LiquidSkyPaint.settleColor(dark: dark)
-            let paused = motion.poseStill(reduceMotion)
+            // No clock at all while nothing can move (`pausesFrames`): a timeline built with `paused: true`
+            // made the render server busier, not quieter (upstream's measurement on the single-canvas sky).
+            let still = Self.pausesFrames(hour: h, light: !dark, poseStill: motion.poseStill(reduceMotion))
             ZStack {
                 Canvas { ctx, size in LiquidSkyPaint.base(ctx, size, top: S.top, mid: S.mid, hor: S.hor) }
-                TimelineView(.animation(minimumInterval: Self.breathInterval, paused: paused)) { tl in
-                    let breathe = 0.5 + 0.5 * sin(liquidSeconds(tl.date) * 0.22)
-                    LiquidSkyBreathLayer().opacity(0.05 + breathe * 0.03)
+                if still {
+                    // The breath held at mid-cycle, as the still frame always drew it.
+                    LiquidSkyBreathLayer().opacity(0.065)
+                } else {
+                    TimelineView(.animation(minimumInterval: Self.breathInterval)) { tl in
+                        let breathe = 0.5 + 0.5 * sin(liquidSeconds(tl.date) * 0.22)
+                        LiquidSkyBreathLayer().opacity(0.05 + breathe * 0.03)
+                    }
                 }
                 if S.warm > 0.01 {
                     Canvas { ctx, size in LiquidSkyPaint.warm(ctx, size, amount: S.warm) }
                 }
-                if S.stars > 0.01 {
-                    TimelineView(.animation(minimumInterval: Self.starsInterval, paused: paused)) { tl in
-                        let now = liquidSeconds(tl.date)
-                        // Pure over its captured values, so it can render off the main thread.
-                        Canvas(rendersAsynchronously: true) { ctx, size in
-                            LiquidSkyPaint.stars(ctx, size, amount: S.stars, now: now)
+                if liquidSkyHasVisibleStars(S.stars) {
+                    if still {
+                        Canvas { ctx, size in LiquidSkyPaint.stars(ctx, size, amount: S.stars, now: nil) }
+                    } else {
+                        TimelineView(.animation(minimumInterval: Self.starsInterval)) { tl in
+                            let now = liquidSeconds(tl.date)
+                            // Pure over its captured values, so it can render off the main thread.
+                            Canvas(rendersAsynchronously: true) { ctx, size in
+                                LiquidSkyPaint.stars(ctx, size, amount: S.stars, now: now)
+                            }
                         }
                     }
                 }
@@ -203,6 +231,19 @@ struct LiquidSky: View {
                 }
             }
         }
+    }
+}
+
+extension LiquidSky {
+    /// Whether the sky is drawn with no clock behind it: motion is unwanted, or nothing in the picture can move.
+    ///
+    /// The frame loop exists for the stars' twinkle. The one other time-varying layer, the slow breath of light,
+    /// moves no pixel by more than 2 of 255 levels in light appearance and 5 in dark over its whole ~29 s
+    /// cycle (iPhone 17 Pro simulator, Today, five screenshots 7 s apart). So whenever no star is bright enough to
+    /// be drawn (dark appearance ~7:07–19:10, light ~5:25–20:51), the breath is held at mid-cycle and nothing
+    /// ticks. The still frame is redrawn whenever the hour changes, and the clocks come back with the stars.
+    static func pausesFrames(hour: Double, light: Bool, poseStill: Bool) -> Bool {
+        poseStill || !liquidSkyHasVisibleStars(liquidSkyAt(hour, light: light).stars)
     }
 }
 

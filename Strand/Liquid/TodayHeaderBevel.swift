@@ -54,7 +54,8 @@ struct SyncProgressBar: View {
 }
 
 /// Bevel's Energy bar mapped to the strap battery: a bolt, a row of ticks filled to the charge, and the
-/// percentage. Tapping opens Devices. Not drawn when the strap isn't the active device.
+/// percentage. Tapping opens Devices. Under an active ring it shows the ring's own charge once reported
+/// (`StrapBatteryDisplay.resolve`); otherwise not drawn when the strap isn't the active device.
 struct StrapEnergyBar: View {
     @EnvironmentObject private var live: LiveState
     @EnvironmentObject private var router: NavRouter
@@ -69,13 +70,14 @@ struct StrapEnergyBar: View {
     var body: some View {
         let display = LiquidTodayView.StrapBatteryDisplay.resolve(
             activeIsWhoop: live.activeIsWhoop, connected: live.connected,
-            batteryPct: live.batteryPct, charging: live.charging)
+            batteryPct: live.batteryPct, charging: live.charging,
+            ringPct: live.ouraBatteryPct, ringCharging: live.ouraWearState == .charging)
         if case .notActiveDevice = display {
             EmptyView()
         } else {
             let (pct, charging): (Double?, Bool) = {
                 switch display {
-                case .charge(let p, let c): return (p, c)
+                case .charge(let p, let c, _): return (p, c)
                 case .pending(let c): return (nil, c)
                 default: return (nil, false)
                 }
@@ -83,7 +85,7 @@ struct StrapEnergyBar: View {
             // Pulses while the strap charges or the link is still coming up (no reading yet / offline).
             let busy: Bool = {
                 switch display {
-                case .charge(_, let c): return c
+                case .charge(_, let c, _): return c
                 default: return true
                 }
             }()

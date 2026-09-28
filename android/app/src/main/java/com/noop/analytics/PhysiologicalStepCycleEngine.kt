@@ -47,7 +47,7 @@ internal object PhysiologicalStepCycleEngine {
     internal fun loadCacheKey(
         onset: Long, endExclusive: Long, hrWitness: String, restingHr: Double, maxHr: Double?,
         effortMethod: StrainScorer.Method, profile: UserProfile,
-    ): String = "$onset-$endExclusive|$hrWitness|rhr=$restingHr|max=${maxHr ?: "nil"}|$effortMethod|$profile"
+    ): String = "$onset-$endExclusive|$hrWitness|rhr=$restingHr|max=${maxHr ?: "nil"}|$effortMethod|${profile.cacheKey}"
 
     suspend fun compute(
         scoredNights: List<DayResult>,

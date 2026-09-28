@@ -397,7 +397,7 @@ final class Repository: ObservableObject {
                 out.append(beat)
             }
         }
-        if out.contains(where: { $0.srcChannel?.isWhoop5Transport == true }) {
+        if out.contains(where: { $0.srcChannel?.isWhoop5Transport == true || $0.srcChannel == .whoop4Historical }) {
             // Retain the selected stream's emission order within a second. Value sorting corrupts
             // successive differences; original offsets also keep owner precedence deterministic.
             return out.enumerated().sorted {
@@ -1167,6 +1167,38 @@ final class Repository: ObservableObject {
             }
         }
         return byTs.values.sorted { $0.ts < $1.ts }
+    }
+
+    /// The most recent banked battery reading, for the stale-battery warning (#2556).
+    ///
+    /// Reads the ACTIVE device id rather than the union: a battery reading belongs to the strap that sent
+    /// it, and warning about one strap's charge using another's reading is the #1706 mistake.
+    func latestBattery() async -> (ts: Int, soc: Double?, charging: Bool?)? {
+        guard let store = await ensureStore() else { return nil }
+        return try? await store.latestBattery(deviceId: deviceId)
+    }
+
+    /// The HR fingerprint over the UNION `hrSamples(from:to:limit:)` reads, as one opaque string.
+    ///
+    /// A fingerprint narrower than the read it guards is worse than none: it would let a caller reuse a
+    /// cached result after a backfill landed rows under an alias id, which is the id set that union exists
+    /// to cover. So this walks `rawPhysiologyReadIds`, the same list, rather than `deviceId` alone.
+    ///
+    /// Cost is one COUNT plus one MAX per id, straight over the `(deviceId, ts)` index with no rows
+    /// materialized, against the per-day row fetches a caller would otherwise repeat. Compared only to
+    /// itself in memory, so the format is free to change. Kotlin twin:
+    /// `WhoopRepository.hrUnionFingerprint`, which is a twin in ROLE only: each side compares its own
+    /// value against its own previous value, neither is persisted or sent anywhere, and the two encode
+    /// the same facts differently. There is no byte-identity contract here and no oracle asserting one,
+    /// so do not "align" the encodings on the assumption that there is.
+    func hrFingerprintUnion(from: Int, to: Int) async -> String {
+        guard let store = await ensureStore() else { return "" }
+        var parts: [String] = []
+        for id in rawPhysiologyReadIds(store: store) {
+            let fp = (try? await store.hrFingerprint(deviceId: id, from: from, to: to)) ?? (count: 0, maxTs: 0)
+            parts.append("\(id):\(fp.count):\(fp.maxTs)")
+        }
+        return parts.joined(separator: "|")
     }
 
     func hrSamples(from: Int, to: Int, limit: Int = 8000) async -> [HRSample] {
@@ -2969,7 +3001,9 @@ final class Repository: ObservableObject {
             // #10: the GPS route lives in RouteStore keyed by the natural key (startTs + sport), NOT in the
             // DB row. Copy it only after the replacement row is durable. Keep the old copy until the old
             // DB row is successfully retired, so a delete failure preserves both complete versions.
-            let oldRoute = RouteStore.load(startTs: old.startTs, sport: old.sport)
+            // WITH points: this re-stores under a new natural key, and `load` hands back a drawable route
+            // only, so a plain load here would drop the recorded measurements on every edit.
+            let oldRoute = RouteStore.loadWithPoints(startTs: old.startTs, sport: old.sport)
             if let route = oldRoute {
                 RouteStore.store(route, startTs: row.startTs, sport: row.sport)
             }
@@ -3065,7 +3099,9 @@ final class Repository: ObservableObject {
         // below doesn't drop routes, so we read + move them explicitly). Keep the longest polyline.
         var bestRoute: (route: WorkoutRoute, startTs: Int, sport: String)?
         for r in rows {
-            guard let route = RouteStore.load(startTs: r.startTs, sport: r.sport) else { continue }
+            // WITH points, for the same reason as the edit path: the winner is re-stored under the merged
+            // key, so dropping its measurements here would lose them silently.
+            guard let route = RouteStore.loadWithPoints(startTs: r.startTs, sport: r.sport) else { continue }
             if bestRoute == nil || route.polyline.count > bestRoute!.route.polyline.count {
                 bestRoute = (route, r.startTs, r.sport)
             }

@@ -12,7 +12,9 @@ non-negotiable (especially on the Bluetooth path).
 > it contains no WHOOP code, firmware, or assets and performs no DRM circumvention. Every derived
 > metric (HR, HRV, recovery, strain, sleep, SpO₂, temperature) is an **approximation** and is **not**
 > clinically validated. See [`../DISCLAIMER.md`](../DISCLAIMER.md) and
-> [`../ATTRIBUTION.md`](../ATTRIBUTION.md).
+> [`../ATTRIBUTION.md`](../ATTRIBUTION.md). Before proposing a WHOOP-parity feature, check
+> [`SCOPE.md`](SCOPE.md) — some WHOOP-app features (diagnostic-style alerts, social/community
+> features, cloud-dependent parity) are out of scope by design, not by oversight.
 
 ---
 
@@ -53,7 +55,9 @@ A few principles run through the whole codebase. Internalize them before opening
 2. **Interoperability, not impersonation.** NOOP talks to a strap the user already owns. It does not
    log into a WHOOP account, bypass a paywall, or ship WHOOP's proprietary code/firmware/assets/logos.
    Keep contributions on the right side of that line, and keep all WHOOP references *nominative*
-   (used only to name the hardware).
+   (used only to name the hardware). Some WHOOP-app features stay out of scope on the same grounds —
+   see [`SCOPE.md`](SCOPE.md) for the specific list (diagnostic-style alerts, social/community
+   features, cloud-dependent parity) before opening a PR that tries to match one of them.
 3. **Never destructive on the wire.** The strap is real hardware on the user's wrist. The app only
    ever sends a curated, reversible command set. See
    [The BLE safety contract](#the-ble-safety-contract-read-this-before-touching-bluetooth).
@@ -255,7 +259,9 @@ and hardware-dependent verification runs at release time or on demand. This is a
 anonymous, offline, sideloaded project — not a gap to fill with more gates.
 
 - **On every PR (required):** `source-hygiene`, `tools-python` and `i18n-coverage` have no path
-  filter, so all three run on everything. `swift-packages` (`swift test` for `Packages/**`) and
+  filter, so all three run on everything. (`tools-python`'s Windows leg is a separate workflow and IS
+  filtered, to `Tools/linux-capture/**`: it re-runs only those tests under legacy console encodings,
+  and they read nothing outside their own package.) `swift-packages` (`swift test` for `Packages/**`) and
   `android` (`assembleFullDebug` + `testFullDebugUnitTest`) are **path-filtered** — they run when you
   touch what they cover, which is most substantive PRs. Between them these catch the regressions that
   matter most (protocol/analytics math, storage, i18n) without a device or an app build. The check
@@ -598,6 +604,11 @@ Schema lives in `Packages/WhoopStore/Sources/WhoopStore/Database.swift` as a **v
   commits/PRs where practical.
 - **Show your verification.** For anything on the BLE path, state what you tested on real hardware.
   For analytics, cite the method and add a test. For UI, confirm it uses only `StrandDesign` tokens.
+- **Scoring changes follow the validation protocol.** Any change to a scored output — sleep stages,
+  recovery, strain, HRV — is governed by [`VALIDATION_PROTOCOL.md`](VALIDATION_PROTOCOL.md): the
+  prediction is pre-registered before measuring, the self-comparison audit gates the reference set,
+  every number ships with the command that regenerates it, and the headline figure comes from a
+  temporal held-out window. Paste its checklist into the PR.
 - **Anonymous, project-voice.** Documentation and comments are written in a neutral, third-person
   project voice. Keep upstream credits (`my-whoop`, `goose`, `GRDB.swift`, `ZIPFoundation`) intact.
 - **No proprietary material.** Don't add WHOOP firmware, decompiled app code, logos, or assets, and

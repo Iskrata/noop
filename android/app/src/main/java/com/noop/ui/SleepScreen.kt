@@ -26,7 +26,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
@@ -188,6 +190,7 @@ private fun SleepFreshnessNote(status: SleepFreshnessStatus, chunks: Int) {
 fun SleepScreen(
     vm: AppViewModel,
     onOpenJournal: () -> Unit = {},
+    onOpenAlarms: () -> Unit = {},
 ) {
     val days by vm.recentDays.collectAsStateWithLifecycle()
     // Whether the ACTIVE strap is an Oura ring, off the canonical brand table (not an "oura" literal) — so
@@ -658,6 +661,7 @@ fun SleepScreen(
             item {
                 SleepEmptyState()
             }
+            item { SleepAlarmsEntry(onOpenAlarms) }
         } else {
             // REST HERO — a scenic indigo backdrop with the night's sleep-performance score as a
             // layered BevelGauge (Rest gradient), else a big rounded hours-slept headline. Mirrors the
@@ -677,6 +681,7 @@ fun SleepScreen(
                     overline = nightLabel,
                 )
             }
+            item { SleepAlarmsEntry(onOpenAlarms) }
             // #sleep-layout: a compact "Arrange" affordance (the same Tune entry Today uses) opens the
             // reorder / show-hide sheet. Pinned just above the arrangeable cards.
             item {
@@ -954,6 +959,19 @@ fun SleepScreen(
                 }
               }
             }
+        }
+    }
+}
+
+/** The existing alarm settings, reachable from Sleep with or without recorded nights. */
+@Composable
+private fun SleepAlarmsEntry(onOpenAlarms: () -> Unit) {
+    NoopCard(modifier = Modifier.clickable(onClick = onOpenAlarms), tint = Palette.restColor) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Metrics.gap)) {
+            Icon(Icons.Filled.Alarm, contentDescription = null, tint = Palette.restColor)
+            Text(stringResource(R.string.nav_alarms), style = NoopType.headline, color = Palette.textPrimary,
+                 modifier = Modifier.weight(1f))
+            Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Palette.textTertiary)
         }
     }
 }
@@ -2022,7 +2040,7 @@ private const val STAGE_ROW_SMOOTH_SEC = 90.0
 
 /**
  * iOS #988 port — the WHOOP-style per-stage timeline stack that replaces the flat hypnogram strip
- * for real-stage nights. Four tappable rows in WHOOP order (AWAKE · LIGHT · DEEP · REM), each a
+ * for real-stage nights. Four tappable rows in chart-depth order (AWAKE · REM · LIGHT · DEEP), each a
  * hatched full-night track with solid segments on the shared onset→wake axis; MotionStrip and the
  * clock-label axis sit under the rows on the SAME timeline; a fixed-height insight slot closes the
  * stack. The rows ARE the legend — no dot row, no footer. Mirrors SleepView.stageTimeline.
@@ -2052,9 +2070,9 @@ internal fun StageTimeline(
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.space8)) {
         listOf(
             Triple("Awake", s.awake, Palette.sleepAwake),
+            Triple("REM", s.rem, Palette.sleepREM),
             Triple("Light", s.light, Palette.sleepLight),
             Triple("Deep", s.deep, Palette.sleepDeep),
-            Triple("REM", s.rem, Palette.sleepREM),
         ).forEach { (label, minutes, color) ->
             StageTimelineRow(
                 label = label,

@@ -688,6 +688,20 @@ object NoopPrefs {
         of(context).edit().putBoolean(KEY_OURA_ONSET_KEYING, enabled).apply()
     }
 
+    /** Oura packed-notification A/B (EXPERIMENTAL, default OFF): send the official app's SetNotification mask
+     *  `1c 01 ff` at the next connect instead of NOOP's `3f`. The ring packs ~10 packets per notification for
+     *  the official app (9x the drain throughput) and NOOP's session never gets that shape; the mask is the
+     *  first candidate switch (OURA_PROTOCOL.md s2.3). Read once per connect, so turning it off restores `3f`
+     *  on the next session — nothing persists on the ring. Twin of iOS AppModel.ouraNotifyMaskFullKey. */
+    const val KEY_OURA_NOTIFY_MASK_FULL = "noop.ouraNotifyMaskFull"
+
+    fun ouraNotifyMaskFull(context: Context): Boolean =
+        of(context).getBoolean(KEY_OURA_NOTIFY_MASK_FULL, false)
+
+    fun setOuraNotifyMaskFull(context: Context, enabled: Boolean) {
+        of(context).edit().putBoolean(KEY_OURA_NOTIFY_MASK_FULL, enabled).apply()
+    }
+
     /** #1121: whether the opt-in "detailed capture" rolling strap-log file is on. Persisted so capture
      *  RESUMES after the process is killed (AppViewModel re-arms the BLE client from this on launch). */
     const val KEY_DETAILED_CAPTURE = "noop.detailedCapture"
@@ -1256,6 +1270,18 @@ object NoopPrefs {
         of(context).edit().putBoolean(KEY_BATTERY_LOW_ALERTED, alerted).apply()
     }
 
+    /** The banked reading `onStrapNotSeen` last warned about, as its epoch SECONDS (#2556). Keyed on the
+     *  reading rather than a boolean so one stale value cannot re-notify on every app open, while a NEWER
+     *  low reading still counts as a new fact. 0 means never. */
+    const val KEY_BATTERY_STALE_ALERTED_TS = "noop.batteryStaleAlertedTs"
+
+    fun batteryStaleAlertedTs(context: Context): Long? =
+        of(context).getLong(KEY_BATTERY_STALE_ALERTED_TS, 0L).takeIf { it > 0L }
+
+    fun setBatteryStaleAlertedTs(context: Context, ts: Long) {
+        of(context).edit().putLong(KEY_BATTERY_STALE_ALERTED_TS, ts).apply()
+    }
+
     fun batteryFullAlerted(context: Context): Boolean =
         of(context).getBoolean(KEY_BATTERY_FULL_ALERTED, false)
 
@@ -1499,6 +1525,18 @@ object NoopPrefs {
      *  than writing to a key that belongs to no device. */
     fun setLastSyncAtFor(context: Context, peripheralId: String?, epochSec: Long) {
         val key = com.noop.ble.lastSyncPrefKey(peripheralId) ?: return
+        of(context).edit().putLong(key, epochSec).apply()
+    }
+
+    /** This strap's own newest banked-record timestamp, keyed by BLE address — see
+     *  [com.noop.ble.strapClockPrefKey]. 0 when this strap has never reported a range. */
+    fun strapNewestRecordTsFor(context: Context, peripheralId: String?): Long =
+        com.noop.ble.strapClockPrefKey(peripheralId)?.let { of(context).getLong(it, 0L) } ?: 0L
+
+    /** Stamp a range reply against the strap that sent it. A blank address writes nothing rather than
+     *  writing to a key that belongs to no device. */
+    fun setStrapNewestRecordTsFor(context: Context, peripheralId: String?, epochSec: Long) {
+        val key = com.noop.ble.strapClockPrefKey(peripheralId) ?: return
         of(context).edit().putLong(key, epochSec).apply()
     }
 

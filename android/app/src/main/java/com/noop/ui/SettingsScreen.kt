@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Sensors
@@ -138,6 +139,8 @@ import com.noop.ble.WhoopModel
 import com.noop.data.DataBackup
 import com.noop.ingest.RawSensorExport
 import com.noop.ingest.WhoopCsvExporter
+import com.noop.testcentre.TestCentre
+import com.noop.testcentre.TestDomain
 import com.noop.update.UpdateCheck
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -510,6 +513,9 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val live by vm.live.collectAsStateWithLifecycle()
+    // #2338: the read-only advertising-name probe result. Its own flow on the BLE client rather than a
+    // LiveState field, matching the other opcode probes.
+    val advertisingNameProbe by vm.advertisingNameProbe.collectAsStateWithLifecycle()
 
     // The profile store is stable for the lifetime of this screen; a version counter
     // forces recomposition after each mutating write (SharedPreferences isn't reactive).
@@ -698,6 +704,8 @@ fun SettingsScreen(
     }
     val distanceUnitSystem = UnitPrefs.resolveDistance(unitSystem, distanceSystemRaw)
     var clockFormat by remember { mutableStateOf(ClockPrefs.preference(context)) }   // #1821
+    // #2346: gauge numeral weight, mirrored locally so the pill is live; AppearancePrefs is the store.
+    var gaugeNumerals by remember { mutableStateOf(AppearancePrefs.gaugeNumerals) }
     var temperatureRaw by remember {
         mutableStateOf(NoopPrefs.of(context).getString(NoopPrefs.KEY_TEMPERATURE_UNIT, "") ?: "")
     }
@@ -1441,6 +1449,27 @@ fun SettingsScreen(
                 )
             }
             SettingsRowDivider()
+            // #2346: how heavy the numeral over a gauge is drawn. A reporter found the Today gauges "too
+            // much in your face"; bold display numerals are the house style on BOTH platforms, so this is
+            // a preference rather than a defect and Bold stays the default. Only the WEIGHT is offered:
+            // the size is pinned to the iOS ratio and is not a per-platform knob. Twin of the Apple row.
+            SettingsFormRow(label = uiString(R.string.l10n_settings_screen_gauge_numbers_db0d45e3)) {
+                SegmentedPillControl(
+                    items = listOf(GaugeNumeralStyle.BOLD, GaugeNumeralStyle.SOFT),
+                    selection = gaugeNumerals,
+                    label = {
+                        when (it) {
+                            GaugeNumeralStyle.BOLD -> uiString(R.string.l10n_settings_screen_bold_19e07430)
+                            GaugeNumeralStyle.SOFT -> uiString(R.string.l10n_settings_screen_softer_9edfeba1)
+                        }
+                    },
+                    onSelect = {
+                        gaugeNumerals = it
+                        AppearancePrefs.setGaugeNumerals(context, it)
+                    },
+                )
+            }
+            SettingsRowDivider()
             // Theme presets — one-tap bundles coordinating accent + chart world + backdrop + card opacity.
             // Derived (no stored value): tweaking any control below flips this to Custom.
             SettingsFormRow(label = uiString(R.string.l10n_settings_screen_preset)) {
@@ -2012,8 +2041,11 @@ fun SettingsScreen(
                     )
                     live.batteryPct?.let { pct ->
                         StatePill(
-                            title = uiString(R.string.l10n_settings_screen_battery_pct_roundtoint_e02e2891, pct.roundToInt()) +
-                                if (live.charging == true) " · Charging" else "",
+                            title = uiString(
+                                R.string.l10n_settings_screen_battery_pct_roundtoint_e02e2891,
+                                pct.roundToInt(),
+                                if (live.charging == true) " · " + uiString(R.string.l10n_live_screen_charging_5f99fe21) else "",
+                            ),
                             tone = batteryTone(pct),
                             showsDot = false,
                         )
@@ -2042,6 +2074,74 @@ fun SettingsScreen(
                     )
                 }
 
+                // #2338: the section is shown for a 5/MG too, where it used to be absent entirely. A
+                // second-hand band arrives carrying the previous owner's name, and a section that is not
+                // rendered cannot say why it can do nothing about it.
+                //
+                // The SECTION renders for any connected 5/MG; only the CONTROLS sit behind Test Centre
+                // Connection. Gating the whole thing put it back to invisible on a default install,
+                // which is the state that had this reported as "you cannot change it" rather than "not
+                // supported yet" — the regression this split exists to prevent.
+                //
+                // The controls are gated because opcode 140 has never been confirmed on this family and
+                // the payload shape is mirrored from the 4.0 form rather than observed. Reversible
+                // (rename again), which is what the BLE contract asks, and the read-only check beside it
+                // is how you find out whether the write landed.
+                val fiveMgRenameUnlocked = TestCentre.from(context).active(TestDomain.CONNECTION)
+                if (live.connected && live.whoop5Detected) {
+                    var nameDraft5 by remember(live.advertisingName) { mutableStateOf(live.advertisingName ?: "") }
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(uiString(R.string.l10n_settings_screen_strap_name_350de547), style = NoopType.subhead, color = Palette.textPrimary)
+                        Text(
+                            uiString(
+                                if (fiveMgRenameUnlocked) R.string.l10n_settings_screen_experimental_on_a_whoop_5_0_711d5341
+                                else R.string.l10n_settings_screen_renaming_is_not_supported_on_a_02f7af2c,
+                            ),
+                            style = NoopType.footnote,
+                            color = Palette.textTertiary,
+                        )
+                        if (fiveMgRenameUnlocked) {
+                            OutlinedTextField(
+                                value = nameDraft5,
+                                onValueChange = { nameDraft5 = it.take(24) },
+                                singleLine = true,
+                                placeholder = { Text(uiString(R.string.l10n_settings_screen_whoop_a3650379), style = NoopType.body, color = Palette.textTertiary) },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Palette.textPrimary,
+                                    unfocusedTextColor = Palette.textPrimary,
+                                    focusedBorderColor = Palette.accent,
+                                    unfocusedBorderColor = Palette.hairline,
+                                    cursorColor = Palette.accent,
+                                    focusedContainerColor = Palette.surfaceInset,
+                                    unfocusedContainerColor = Palette.surfaceInset,
+                                ),
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                NoopButton(
+                                    text = uiString(R.string.l10n_settings_screen_rename_d3f4cb89),
+                                    leadingIcon = Icons.Filled.Edit,
+                                    kind = NoopButtonKind.Primary,
+                                    enabled = live.bonded && nameDraft5.isNotBlank(),
+                                    onClick = { vm.ble.renameStrap(nameDraft5) },
+                                )
+                                // Read-only: GET_ADVERTISING_NAME(141), nothing is written. This is how you
+                                // check whether the write above did anything at all.
+                                NoopButton(
+                                    text = uiString(R.string.l10n_settings_screen_check_current_name_read_only_acb2f01a),
+                                    leadingIcon = Icons.Filled.Search,
+                                    kind = NoopButtonKind.Secondary,
+                                    enabled = live.bonded,
+                                    onClick = { vm.ble.probeAdvertisingName() },
+                                )
+                            }
+                            (live.renameStatus ?: advertisingNameProbe)?.let {
+                                Text(it, style = NoopType.footnote, color = Palette.textSecondary)
+                            }
+                        }
+                    }
+                }
+
                 // Rename the strap's BLE advertising name (WHOOP 4.0 only). Writes the name to the strap
                 // firmware (cmd 77); it reboots to apply, so the new name shows on the next connect. Handy
                 // for a second-hand band stuck on the previous owner's name. Reversible.
@@ -2050,8 +2150,7 @@ fun SettingsScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(uiString(R.string.l10n_settings_screen_strap_name_350de547), style = NoopType.subhead, color = Palette.textPrimary)
                         Text(
-                            uiString(R.string.l10n_settings_screen_rename_your_strap_s_bluetooth_name_6032668b) +
-                                " reboots to apply, then reconnects with the new name.",
+                            uiString(R.string.l10n_settings_screen_rename_your_strap_s_bluetooth_name_6032668b),
                             style = NoopType.footnote,
                             color = Palette.textTertiary,
                         )
@@ -2371,9 +2470,7 @@ fun SettingsScreen(
                                 color = Palette.textPrimary,
                             )
                             Text(
-                                uiString(R.string.l10n_settings_screen_runs_the_continuous_hrv_stream_only_3fed47c5) +
-                                " Note: continuous background HRV capture (including daytime naps) is paused outside this window. " +
-                                "For on-demand daytime HRV readings (including naps), use the \"Take an HRV reading\" button on the Live screen.",
+                                uiString(R.string.l10n_settings_screen_runs_the_continuous_hrv_stream_only_3fed47c5),
                                 style = NoopType.footnote,
                                 color = Palette.textTertiary,
                             )
@@ -2458,8 +2555,7 @@ fun SettingsScreen(
                 }
 
                 // "WHOOP 4.0 vs 5.0/MG — what each can read and why" (FI-2 / #490). Shown to BOTH model
-                // owners, so a 4.0 user understands their strap is fully supported (and why the firmware
-                // broadcast-out is 5/MG-only while NOOP's own re-broadcast in Data Sources works on a 4.0).
+                // owners, so either generation's supported features and protocol differences are clear.
                 val modelComparisonInteraction = remember { MutableInteractionSource() }
                 Box(
                     modifier = Modifier
@@ -2963,10 +3059,7 @@ fun SettingsScreen(
                     )
                 }
                 Text(
-                    uiString(R.string.l10n_settings_screen_a_transparent_cardiorespiratory_recipe_that_recovers_eebe00c2) +
-                        " V1 staging, and is now the default. It only changes how already-detected nights are " +
-                        "split into stages (detection and scores are unchanged); turn it off to fall back to " +
-                        "V1. Takes effect on the next nights staged.",
+                    uiString(R.string.l10n_settings_screen_a_transparent_cardiorespiratory_recipe_that_recovers_eebe00c2),
                     style = NoopType.caption,
                     color = Palette.textTertiary,
                 )
@@ -3002,12 +3095,7 @@ fun SettingsScreen(
                     )
                 }
                 Text(
-                    uiString(R.string.l10n_settings_screen_reviews_each_scored_wake_block_for_537924ea) +
-                        " change in body position) instead of just a heart-rate rise. A wake block with no " +
-                        "locomotion and a stable posture -- a hot night, a brief turn-over -- is folded back " +
-                        "into light sleep; a real get-up is left alone. Self-checks how much motion detail " +
-                        "your strap actually recorded and stays off on a night that's too sparse to trust " +
-                        "(older WHOOP 4.0 firmware, mainly). Off by default; takes effect on the next nights staged.",
+                    uiString(R.string.l10n_settings_screen_reviews_each_scored_wake_block_for_537924ea),
                     style = NoopType.caption,
                     color = Palette.textTertiary,
                 )
@@ -3551,8 +3639,7 @@ fun SettingsScreen(
                 SettingsNoteRow(
                     icon = Icons.Filled.Info,
                     iconTint = Palette.textTertiary,
-                    text = uiString(R.string.l10n_settings_screen_importing_overwrites_everything_currently_on_this_297b76ae) +
-                        " Export CSV writes a WHOOP-format zip of your days, sleeps, workouts and journal that re-imports into NOOP on Android or Mac. On-device computed rows are marked APPROXIMATE in its Source column; the .noopbak backup stays the lossless restore path.",
+                    text = uiString(R.string.l10n_settings_screen_importing_overwrites_everything_currently_on_this_297b76ae),
                 )
 
                 // #644: .noopbak is a plain ZIP, not an encrypted container — anyone who gets the file

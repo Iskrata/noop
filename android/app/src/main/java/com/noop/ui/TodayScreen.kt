@@ -160,6 +160,7 @@ import com.noop.analytics.BatteryEstimator
 import com.noop.analytics.ChargeDriver
 import com.noop.analytics.ChargeDriverLabel
 import com.noop.analytics.ChargeDriverUnit
+import com.noop.analytics.RecoveryDrivers
 import com.noop.analytics.ChargeDriverVerdict
 import com.noop.analytics.DayCycleMode
 import com.noop.analytics.DayCycleIntelligenceIntegration
@@ -337,6 +338,9 @@ fun TodayScreen(
     // source streams, and the strap's percentage is never cleared, so under an active ring both halves of
     // the old gate passed and Today drew the strap's charge. Same seam the Devices list already uses.
     val activeIsWhoop by viewModel.activeIsWhoop.collectAsStateWithLifecycle()
+    // The ring's OWN charge while a ring source is live (null otherwise, #2075), so the header can draw the
+    // active ring's battery instead of nothing. Changes a few times a session, no per-tick churn.
+    val ouraBatteryPct by viewModel.ouraBatteryPct.collectAsStateWithLifecycle()
     val v5Signals by viewModel.v5Signals.collectAsStateWithLifecycle()
     val cycleEnabled by viewModel.cycleTrackingEnabled.collectAsStateWithLifecycle()
     val cycleHidden by viewModel.cycleAwarenessHidden.collectAsStateWithLifecycle()
@@ -1402,8 +1406,10 @@ fun TodayScreen(
                 dayTitle = dayTitle,
                 humanDate = humanDate,
                 selectedDay = selectedDay,
-                batteryPct = if (liveSnap.connected) liveSnap.batteryPct else null,
-                strapIsActiveDevice = activeIsWhoop,
+                battery = HeaderBatteryDisplay.resolve(
+                    activeIsWhoop = activeIsWhoop, connected = liveSnap.connected,
+                    strapPct = liveSnap.batteryPct, ringPct = ouraBatteryPct,
+                ),
                 backfilling = liveSnap.backfilling,
                 syncChunksThisSession = liveSnap.syncChunksThisSession,
                 lastSyncAt = liveSnap.lastSyncAt,
@@ -1764,7 +1770,10 @@ fun TodayScreen(
                         ) {
                             Row(verticalAlignment = Alignment.Top) {
                                 Box(modifier = Modifier.weight(1f)) {
-                                    SectionHeader(uiString(R.string.today_section_key_metrics), overline = dayLabel, trailing = trendWindowLabel(keyMetricsWindowDays))
+                                    // The label names the window the DETAILED tiles graph, so it is only honest while they are
+                                    // drawn: with the trend graphs off (the default) nothing in this section renders a
+                                    // trend, and the header was still announcing one (#2376). Twin of the Apple change.
+                                    SectionHeader(uiString(R.string.today_section_key_metrics), overline = dayLabel, trailing = if (keyMetricsDetailed) trendWindowLabel(keyMetricsWindowDays) else null)
                                 }
                                 TodayEditAction(
                                     onClick = { showMetricsEditor = true },
@@ -2145,7 +2154,7 @@ private fun WorkoutInProgressCard(
             .liquidPress(interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onReturn)
             .semantics(mergeDescendants = true) {
-                contentDescription = uiString(R.string.l10n_today_screen_workout_in_progress_sportlabel_elapsed_return_95ce4bda, sportLabel, elapsed) + pausedSuffix
+                contentDescription = uiString(R.string.l10n_today_screen_workout_in_progress_sportlabel_elapsed_return_95ce4bda, sportLabel, elapsed, pausedSuffix)
             },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(Metrics.space12)) {
@@ -2524,12 +2533,10 @@ private fun LiquidTodayHeader(
     dayTitle: String,
     humanDate: String,
     selectedDay: LocalDate,
-    batteryPct: Double?,
-    /** Whether the STRAP is the active device. Separate from [batteryPct] on purpose: that says what
-     *  the control reads, this says whether the control should exist. A null percentage while the strap
-     *  IS active means "connected, no reading yet" and is worth drawing; a strap that is not the active
-     *  device has nothing to say and is not drawn at all. (#2208) */
-    strapIsActiveDevice: Boolean,
+    /** What the battery ring shows for the ACTIVE device, resolved by [HeaderBatteryDisplay]: the strap's
+     *  charge (or its offline / no-reading-yet glyph) under an active strap, the ring's own charge under an
+     *  active ring, and nothing at all when the active device is neither. (#2208) */
+    battery: HeaderBatteryDisplay.State,
     // #245: sync state for the compact header chip (twin of iOS SyncStatusChip).
     backfilling: Boolean = false,
     syncChunksThisSession: Int = 0,
@@ -2658,11 +2665,18 @@ private fun LiquidTodayHeader(
             // (b) Quick-add (+), the accented primary. Mirrors iOS's LiquidAddButton (a glyph on a translucent
             // disc → the quick-actions menu). Sized to match the rest of the liquid cluster (shared HeaderClusterControl).
             QuickActionDisc(onClick = onQuickActions)
-            // (c) Strap battery ring showing the % (iOS LiquidBatteryButton). Tap → Devices.
-            // Not drawn when the strap is not the active device: an empty "Strap battery" ring under a
-            // streaming ring is a control asserting something about a strap nobody is wearing.
-            if (strapIsActiveDevice) {
-                LiquidBatteryRing(batteryPct = batteryPct, onClick = onOpenDevices)
+            // (c) Active-device battery ring showing the % (iOS LiquidBatteryButton). Tap → Devices.
+            // Not drawn when the active device is neither the strap nor a ring with a charge of its own to
+            // show: an empty "Strap battery" ring under a streaming ring is a control asserting something
+            // about a strap nobody is wearing. A ring that HAS reported its charge is the active device's
+            // own reading, and #2208's fix left it undrawn only because the control could not yet tell
+            // whose number it held.
+            when (battery) {
+                HeaderBatteryDisplay.State.NotActiveDevice -> Unit
+                HeaderBatteryDisplay.State.Offline, HeaderBatteryDisplay.State.Pending ->
+                    LiquidBatteryRing(batteryPct = null, isRing = false, onClick = onOpenDevices)
+                is HeaderBatteryDisplay.State.Charge ->
+                    LiquidBatteryRing(batteryPct = battery.pct, isRing = battery.isRing, onClick = onOpenDevices)
             }
         }
     }
@@ -2795,14 +2809,16 @@ private fun ChipCapsule(
     }
 }
 
-/** The liquid header strap-battery ring: when connected + a reading exists it draws a trimmed ring in
- *  the charge/warning/critical hue plus the % inside, else a
- *  bolt-slash glyph. Tap → Devices. Mirrors the iOS liquid header battery ring. */
+/** The liquid header active-device battery ring: when connected + a reading exists it draws a trimmed
+ *  ring in the charge/warning/critical hue plus the % inside, else a bolt-slash glyph. [isRing] names the
+ *  device in the label — "Strap battery" over a ring's charge would be the #2208 misattribution again, in
+ *  the label instead of the number. Tap → Devices. Mirrors the iOS liquid header battery ring. */
 @Composable
-private fun LiquidBatteryRing(batteryPct: Double?, onClick: () -> Unit) {
+private fun LiquidBatteryRing(batteryPct: Double?, isRing: Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
-    val label = batteryPct?.let { uiString(R.string.today_strap_battery_percent, it.roundToInt()) }
-        ?: uiString(R.string.today_strap_battery)
+    val label = batteryPct?.let {
+        uiString(if (isRing) R.string.today_ring_battery_percent else R.string.today_strap_battery_percent, it.roundToInt())
+    } ?: uiString(R.string.today_strap_battery)
     Box(
         modifier = Modifier
             .size(HeaderClusterControl)
@@ -3257,9 +3273,15 @@ private fun HeroRingColumn(
                 color = Palette.textSecondary,
                 modifier = Modifier
                     .fillMaxWidth()
-                    // Keep almost the complete width available on the leading side. The larger trailing
-                    // inset reserves space for the chevron without shifting or clipping longer labels.
-                    .padding(start = Metrics.space2, end = Metrics.space18),
+                    // The 16.dp each side the note above specifies (#2421). It had drifted to 2.dp leading
+                    // against 18.dp trailing, reserving the chevron on one side only, so `TextAlign.Center`
+                    // centred the word in a box 16.dp narrower on the right and put it 8.dp LEFT of the ring
+                    // above it, on every hero label. A reporter saw that before anyone reading this file did.
+                    //
+                    // Symmetric at 16 rather than 18 because the width matters: it is the margin
+                    // `AutoSizeValue` shrinks into before it ellipsises, and #1502 was a German "ERHOLUNG"
+                    // cut to "R…". 16 clears the 14.dp chevron by 2.
+                    .padding(horizontal = Metrics.space16),
                 minScale = 0.7f,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
@@ -3363,7 +3385,19 @@ private fun HeroScoreVessel(
             CountUpText(
                 value = value,
                 format = format,
-                style = NoopType.number(numberSp, weight = FontWeight.Bold)
+                // #2346: the weight follows the Appearance preference. BOLD is the shipped look and the
+                // default, so nothing moves unless someone asks; SOFT falls back to `NoopType.number`'s
+                // own default, the weight every other number in the app already uses. The SIZE is not a
+                // preference: it is pinned to the iOS 96-to-26 ratio a few lines up, and moving one
+                // platform alone would break that.
+                style = NoopType.number(
+                    numberSp,
+                    weight = if (AppearancePrefs.gaugeNumerals == GaugeNumeralStyle.SOFT) {
+                        FontWeight.SemiBold
+                    } else {
+                        FontWeight.Bold
+                    },
+                )
                     .copy(shadow = Shadow(color = Color.Black.copy(alpha = 0.5f), offset = Offset(0f, 1f), blurRadius = 6f)),
                 color = Color.White,
                 modifier = Modifier.clearAndSetSemantics {},
@@ -3916,10 +3950,11 @@ private fun HostedCardsSection(
     }
     // Today's stress curve, loaded only when the card is actually hosted — the same "hosting none pays
     // nothing" rule the sleep model above follows. Routed through the SAME gated producer the stress
-    // widget publishes from, so hosting this card costs one indexed COUNT on an unchanged day and the
-    // card and the widget can never show different curves.
+    // widget publishes from, so an unchanged day costs one indexed COUNT. The foreground card passes
+    // the user's selected lens; background widget callers deliberately keep the cheaper default lens.
     val needsStressCurve = cards.contains(HostedCard.STRESS_TODAY)
     var stressCurve by remember { mutableStateOf<List<StressPoint>>(emptyList()) }
+    var stressActivityMaskedHours by remember { mutableStateOf(0) }
     // SEEDED from the curve already on disk, so an app update does not show "Calibrating" for a day it
     // has already scored. `stressCurve` starts empty on a cold process, and the card reads an empty
     // curve as an unscored day, which is honest for a genuinely unscored one and wrong the moment the
@@ -3928,11 +3963,13 @@ private fun HostedCardsSection(
     // makes the producer answer null, which by contract means "say nothing" and leaves the card empty
     // until the next pass.
     //
-    // The widget snapshot is the same curve, written by the last scoring pass and day-guarded on load,
-    // so it is either today's or nothing. Read once, off the main thread, and only while nothing better
-    // has arrived, so a compute that has already landed is never overwritten by a staler copy.
+    // The widget snapshot is today's default-lens curve. It is a valid cold-start seed only while the
+    // personal lens is OFF; using it while opted in recreates #2430 until the foreground pass finishes,
+    // or indefinitely if no active strap id arrives. Read once, off the main thread, and only while
+    // nothing better has arrived, so a compute that already landed is never overwritten by a stale copy.
     LaunchedEffect(Unit) {
         if (stressCurve.isNotEmpty()) return@LaunchedEffect
+        if (NoopPrefs.stressPersonalBaseline(context)) return@LaunchedEffect
         val banked = withContext(Dispatchers.IO) {
             runCatching { WidgetSnapshotStore.load(context).stressSeries }.getOrDefault(emptyList())
         }
@@ -3942,12 +3979,13 @@ private fun HostedCardsSection(
     // heart rate — `days` is the daily rows, not the intraday samples the curve is built from. So a
     // card left open held whatever it scored then, while the Stress screen scores when you open it,
     // and the two drifted apart by however long sat between the two triggers. A reporter saw 1pm here
-    // against 2pm there at twenty past four. Same producer and same scoring on both sides; the whole
-    // difference was when each last asked, so this asks again on the cadence the widget already uses.
+    // against 2pm there at twenty past four. This asks again on the producer's shared cadence; the
+    // foreground lens is passed below so Today's curve also matches Stress detail when personal mode is on.
     val stressLifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(needsStressCurve, days, viewModel.activeStrapId, stressLifecycleOwner) {
         if (!needsStressCurve) {
             stressCurve = emptyList()
+            stressActivityMaskedHours = 0
             return@LaunchedEffect
         }
         // Gated on STARTED, the same reason HealthScreen's live-HR tick is: a LaunchedEffect is tied to
@@ -3963,8 +4001,15 @@ private fun HostedCardsSection(
                 // producer documents as keep-what-you-had rather than "today scored nothing". Holding
                 // the last curve matters more here than for a single pass: blanking the card on one bad
                 // tick would be a visible flicker on a screen that is sitting open.
-                StressWidgetProducer.todayCurve(viewModel.repo, viewModel.activeStrapId)
-                    ?.let { stressCurve = it.points }
+                StressWidgetProducer.todayCurve(
+                    viewModel.repo,
+                    viewModel.activeStrapId,
+                    personalBaseline = NoopPrefs.stressPersonalBaseline(context),
+                )
+                    ?.let {
+                        stressCurve = it.points
+                        stressActivityMaskedHours = it.activityMaskedHours
+                    }
                 delay(StressWidgetProducer.RESCORE_INTERVAL_MS)
             }
         }
@@ -4014,7 +4059,7 @@ private fun HostedCardsSection(
                     .then(if (open != null) Modifier.clickable(onClick = open) else Modifier),
             ) {
             when (card) {
-                HostedCard.STRESS_TODAY -> StressTodayCard(stressCurve)
+                HostedCard.STRESS_TODAY -> StressTodayCard(stressCurve, stressActivityMaskedHours)
                 // The Trends-origin trends. `resolveMetric` walks the `days` already in hand, so these
                 // need no model build and no gate, unlike the sleep and stress cards above.
                 HostedCard.TREND_HRV, HostedCard.TREND_RESTING_HR, HostedCard.TREND_EFFORT ->
@@ -5491,7 +5536,8 @@ private fun DriverRow(driver: ChargeDriver) {
         ChargeDriverUnit.BEATS_PER_MINUTE -> uiString(R.string.today_driver_value_bpm, driver.value.roundToInt())
         ChargeDriverUnit.PERCENT -> uiString(R.string.today_driver_value_percent, driver.value.roundToInt())
         ChargeDriverUnit.BREATHS_PER_MINUTE -> uiString(
-            R.string.today_driver_value_br_min, String.format(Locale.getDefault(), "%.1f", driver.value),
+            R.string.today_driver_value_br_min,
+            String.format(Locale.getDefault(), "%.1f", RecoveryDrivers.displayRounded(driver.value, 1)),
         )
         ChargeDriverUnit.CELSIUS_DEVIATION -> uiString(
             R.string.today_driver_value_temp_deviation,
@@ -5502,7 +5548,8 @@ private fun DriverRow(driver: ChargeDriver) {
         ChargeDriverUnit.MILLISECONDS -> uiString(R.string.today_driver_baseline_ms, baseline.roundToInt())
         ChargeDriverUnit.BEATS_PER_MINUTE -> uiString(R.string.today_driver_baseline_bpm, baseline.roundToInt())
         ChargeDriverUnit.BREATHS_PER_MINUTE -> uiString(
-            R.string.today_driver_baseline_br_min, String.format(Locale.getDefault(), "%.1f", baseline),
+            R.string.today_driver_baseline_br_min,
+            String.format(Locale.getDefault(), "%.1f", RecoveryDrivers.displayRounded(baseline, 1)),
         )
         ChargeDriverUnit.PERCENT, ChargeDriverUnit.CELSIUS_DEVIATION -> ""
     } } ?: ""
@@ -5511,6 +5558,16 @@ private fun DriverRow(driver: ChargeDriver) {
         ChargeDriverVerdict.BELOW_BASELINE_SUPPORTING -> uiString(R.string.today_driver_below_supporting)
         ChargeDriverVerdict.ABOVE_BASELINE_LIMITING -> uiString(R.string.today_driver_above_limiting)
         ChargeDriverVerdict.BELOW_BASELINE_LIMITING -> uiString(R.string.today_driver_below_limiting)
+        ChargeDriverVerdict.SLIGHTLY_ABOVE_BASELINE_SUPPORTING ->
+            uiString(R.string.today_driver_slightly_above_supporting)
+        ChargeDriverVerdict.SLIGHTLY_BELOW_BASELINE_SUPPORTING ->
+            uiString(R.string.today_driver_slightly_below_supporting)
+        ChargeDriverVerdict.SLIGHTLY_ABOVE_BASELINE_LIMITING ->
+            uiString(R.string.today_driver_slightly_above_limiting)
+        ChargeDriverVerdict.SLIGHTLY_BELOW_BASELINE_LIMITING ->
+            uiString(R.string.today_driver_slightly_below_limiting)
+        ChargeDriverVerdict.ABOVE_BASELINE_TOO_SMALL -> uiString(R.string.today_driver_above_too_small)
+        ChargeDriverVerdict.BELOW_BASELINE_TOO_SMALL -> uiString(R.string.today_driver_below_too_small)
         ChargeDriverVerdict.AT_BASELINE -> uiString(R.string.today_driver_at_baseline)
         ChargeDriverVerdict.HRV_SATURATION_LIMITING -> uiString(R.string.today_driver_hrv_saturation)
         ChargeDriverVerdict.STRONG_NIGHT_SUPPORTING -> uiString(R.string.today_driver_strong_night)
@@ -5612,8 +5669,7 @@ private fun RecoveryContributorsSection(day: DailyMetric?, carriedDay: DailyMetr
                 color = Palette.sleepDeep,
             )
             Text(
-                uiString(R.string.l10n_today_screen_baselines_learned_on_device_over_14_359f6812) +
-                    " signal against a typical adult range, not medical advice.",
+                uiString(R.string.l10n_today_screen_baselines_learned_on_device_over_14_359f6812),
                 style = NoopType.footnote,
                 color = Palette.textTertiary,
             )
@@ -6025,8 +6081,7 @@ private fun MetricGrid(
             // Matches the single iOS caption "Pending sync · strap history still offloading": the second
             // half alone read as a fragment, and more so now that a real number sits above it (#2012).
             caption = if (restPendingSync) {
-                uiString(R.string.l10n_today_screen_pending_sync_cbe01f9e) + " · " +
-                    uiString(R.string.l10n_today_screen_strap_history_still_offloading_80140264)
+                uiString(R.string.l10n_today_screen_pending_sync_complete_5940c589, uiString(R.string.l10n_today_screen_strap_history_still_offloading_80140264))
             } else {
                 null
             },

@@ -533,6 +533,57 @@ class WhoopBleClient(
 
     companion object {
         private const val TAG = "WhoopBleClient"
+
+        /** #2384: the `HR notify:` line, so a strap log says whether the standard 0x2A37 profile is
+         *  delivering anything at all, and whether what it delivered was usable.
+         *
+         *  iOS has printed this line since #14, the day after its standard-profile parser landed; Android
+         *  never did, and the difference is not cosmetic. A reporter's 5/MG banked `live hr=0 rr=0` on ten consecutive links
+         *  while the historical offload ran perfectly, and their Android log could not distinguish the two
+         *  explanations: the strap never notified on 0x2A37, or it notified with a value
+         *  [parseStandardHr] drops on its 30..220 plausibility check without a word. Those call for
+         *  opposite fixes, and the epitaph's link-wide frame tally cannot tell them apart either.
+         *
+         *  ` ignored` marks the second case, and is the SAME range the value gate uses: if this line says
+         *  ignored, the reading did not reach the UI or the store, and if the line is absent entirely the
+         *  characteristic is silent. Twin of the Swift `BLEManager.standardHrNotifyLine`, so one strap log
+         *  per platform describing one stream reads identically. */
+        internal fun standardHrNotifyLine(hr: Int, rrCount: Int): String {
+            val plausibility = if (hr in 30..220) "" else " ignored"
+            return "HR notify: $hr bpm$plausibility, rr=$rrCount"
+        }
+
+        /** Rate-limit for [standardHrNotifyLine]: the profile runs at about 1 Hz, so an unconditional
+         *  line would bury the rest of the capture. One every 30s answers what it exists to answer, which
+         *  is whether the stream is alive and what shape its readings are, not every beat.
+         *
+         *  Emits on a zero [lastEmitMs] (the first reading of a link is the one most worth having) and on
+         *  a BACKWARDS clock, matching [shouldEmitLiveInsertFailure] next door: `currentTimeMillis` is
+         *  wall time and can step back, and comparing only forwards would strand the stamp in the future
+         *  and silence the line indefinitely. Apple's twin compares `Date`s inline and silences on that
+         *  step instead; the WORDING is pinned across platforms, this cadence policy deliberately is not. */
+        internal fun shouldLogStandardHrNotify(
+            lastEmitMs: Long,
+            nowMs: Long,
+            minGapMs: Long = 30_000L,
+        ): Boolean = lastEmitMs <= 0L || nowMs < lastEmitMs || nowMs - lastEmitMs >= minGapMs
+
+        /** #2387: the outcome token on a `session ended` line, so a timeout says whether it achieved anything.
+         *
+         *  A WHOOP 4.0 routinely ends a PRODUCTIVE offload on the idle timeout, because that firmware
+         *  finishes without emitting HISTORY_COMPLETE. The line said `reason=timeout` either way and the
+         *  rows landed on the NEXT line, so the alarming half read first and the outcome second. A reporter
+         *  read six of these as six interrupted syncs; so did the maintainer reviewing their log, after
+         *  reading the code that says otherwise. Four of those timeouts had banked 56,879, 183,266, 37,645
+         *  and 40,386 rows.
+         *
+         *  Rows, not frames: a stalled session still receives frames, and rows is what the summary line
+         *  beside this one reports, so the two cannot disagree. Same test [shouldNotifySuccessfulOffload]
+         *  already applies. Empty for any other reason, so HISTORY_COMPLETE and the disconnect paths are
+         *  byte-identical to before. Twin of the Swift `BLEManager.sessionEndedOutcome`. */
+        internal fun sessionEndedOutcome(reason: String, bankedRows: Boolean): String =
+            if (reason != "timeout") "" else if (bankedRows) " outcome=drained" else " outcome=nothing-banked"
+
         internal fun shouldNotifySuccessfulOffload(reason: String, bankedRows: Boolean): Boolean =
             reason == "HISTORY_COMPLETE" || (reason == "timeout" && bankedRows)
         /**
@@ -544,22 +595,11 @@ class WhoopBleClient(
          */
         private const val LOG_BUFFER_MAX = 5000
 
-        /**
-         * #1263: durable strap-log tail + generation ring (Android parity for iOS `LiveState`). The in-memory
-         * [logBuffer] dies with the process, so an export taken after a restart would begin at the restart and
-         * lose the lines that explain it. We mirror a durable tail to SharedPreferences every
-         * [LOG_TAIL_PERSIST_EVERY] lines and, at the first log line of each process (and at export time), roll
-         * the surviving tail into a bounded generation ring so an export STILL carries the previous session.
-         * Keys mirror the iOS UserDefaults keys; the tail is newline-joined, the generations a JSON array of
-         * newline-joined blocks. Pure ring math lives in [com.noop.ui.StrapLogGenerations].
-         */
-        private const val STRAP_LOG_TAIL_KEY = "strapLog.tail"
-        private const val STRAP_LOG_GENERATIONS_KEY = "strapLog.generations"
-        /** Persist the durable tail every N lines (batched, not per-line — mirrors iOS `persistEveryNLines`). */
-        private const val LOG_TAIL_PERSIST_EVERY = 32
-        /** How many recent lines the durable tail retains — a sensible day's worth, larger than a single
-         *  generation's cap so a session's whole tail is available to roll. Mirrors iOS `tailLimit`. */
-        private const val LOG_DURABLE_TAIL_LIMIT = 2_000
+        /** Where the #1263 ring kept the log in SharedPreferences, read once to carry it over to disk
+         *  ([com.noop.ui.StrapLogArchive]). The same keys as iOS's UserDefaults ring: the tail newline-joined,
+         *  the runs a JSON array of newline-joined blocks, each beginning with its header. */
+        private const val LEGACY_STRAP_LOG_TAIL_KEY = "strapLog.tail"
+        private const val LEGACY_STRAP_LOG_GENERATIONS_KEY = "strapLog.generations"
 
         /**
          * Fallback device id when the registry has no active device yet (fresh install before the v8
@@ -1661,6 +1701,18 @@ class WhoopBleClient(
          *  the dialog does not hang. */
         const val BATTERY_PACK_PROBE_TIMEOUT_MS = 8_000L
 
+        /** #2338: how long the read-only advertising-name probe waits before calling silence a result. */
+        const val ADVERTISING_NAME_PROBE_TIMEOUT_MS = 8_000L
+
+        /** #2338: how long opcode 140 stays admitted after a confirmed rename write. Short on purpose:
+         *  the frame is queued immediately, so this only has to cover the write queue's drain, and a
+         *  window that outlived the send would widen what a default install can form. */
+        const val ADVERTISING_NAME_WRITE_WINDOW_MS = 3_000L
+
+        /** In-flight sentinel for the #2338 probe. The 5/MG allow-list admits opcode 141 ONLY while this
+         *  is in place, so a default install can never form those bytes. */
+        const val WAITING_ADVERTISING_NAME_PROBE = "__waiting__"
+
         /**
          * Blank the pack's six address bytes inside the raw frame dump, leaving every other byte
          * readable. [cmdOff] + 5 is the address offset the decoder uses; [decoded] gates the edit so a
@@ -2154,6 +2206,17 @@ class WhoopBleClient(
     // dialog. Read-only diagnostic: it decodes nothing into live state and gates nothing.
     private val _batteryPackProbe = MutableStateFlow<String?>(null)
     val batteryPackProbe: StateFlow<String?> = _batteryPackProbe.asStateFlow()
+
+    /** #2338: the read-only GET_ADVERTISING_NAME(141) probe result, or the in-flight sentinel. Drives the
+     *  Devices dialog copy; null when no probe has run. */
+    private val _advertisingNameProbe = MutableStateFlow<String?>(null)
+    val advertisingNameProbe: StateFlow<String?> = _advertisingNameProbe.asStateFlow()
+
+    /** #2338: true only while a user-confirmed 5/MG rename write is actually in flight. The allow-list
+     *  admits opcode 140 on this alone, so a default install can never form those bytes, and the window
+     *  is closed again a few seconds later whatever the strap does. */
+    @Volatile
+    private var advertisingNameWriteArmed = false
 
     // #761: the READ-ONLY feature-flag ENUMERATION report — the flag NAMES the strap's own firmware lists
     // — or the waiting sentinel while the walk runs. Nothing is written to the strap to produce it.
@@ -2848,6 +2911,9 @@ class WhoopBleClient(
     private val liveInsertFailuresStd = java.util.concurrent.atomic.AtomicInteger(0)
     private val liveInsertFailuresRealtime = java.util.concurrent.atomic.AtomicInteger(0)
     @Volatile private var lastStdInsertFailureLogMs = 0L
+    /** #2384: when the `HR notify:` line last went out, for [shouldLogStandardHrNotify]. Volatile for the
+     *  same reason the stamps beside it are: 0x2A37 notifications arrive on a binder thread. */
+    @Volatile private var lastStandardHrNotifyLogMs = 0L
     @Volatile private var lastRealtimeInsertFailureLogMs = 0L
 
     /** #1635: ms since the CLIENT_HELLO write, or null when none is outstanding. Lets the bond-state
@@ -2917,101 +2983,27 @@ class WhoopBleClient(
     // PII scrubbers for the shareable strap log (#445) live at file scope as [redactStrapLogPii]
     // so they're unit-testable without constructing this Android-only client (#421).
 
-    // ── #1263 Durable strap-log tail + generation ring (Android parity for iOS LiveState) ───────────
-    // The in-memory [logBuffer] dies with the process. To make an export taken AFTER a restart still carry
-    // the previous session's tail (issues #1259/#1264), we mirror a durable tail to SharedPreferences and,
-    // once per process, roll the surviving tail into a bounded generation ring. The ring MATH is the pure,
-    // JVM-tested [com.noop.ui.StrapLogGenerations]; this is the thin, untested SharedPreferences wrapper
-    // (the same split iOS has with UserDefaults). All of it runs inside log()'s no-throw guard, and the
-    // roll latch + persistence are serialised on [genLock] because log() is called from BOTH the GATT binder
-    // thread and the main looper — the roll must happen exactly once and must not race the tail mirror.
-    private val genLock = Any()
-    /** Once-per-process latch: the roll must run BEFORE this process's first durable-tail mirror overwrites
-     *  the surviving tail, and exactly once, or a second roll would push this process's own partial tail in
-     *  as a "previous" session. Guarded by [genLock]. */
-    private var didRollGenerations = false
-
-    /** #1468 follow-up: the PREVIOUS-sessions half of [exportLogText], memoised for the process.
-     *
-     *  It is invariant once [rollLogGenerationsIfNeeded] has run: [persistLogGenerations] is called from
-     *  exactly one place, inside that latched roll, so nothing rewrites the generations again while the app
-     *  lives. Recomputing it was pure waste — and not free, since it re-reads SharedPreferences and
-     *  re-formats every past session.
-     *
-     *  That waste only became visible with the Test Centre live readouts (#1468), which call [exportLogText]
-     *  on every 250 ms coalesce tick while a panel is open, so a screen the user leaves open during an
-     *  offload re-read prefs and re-rendered historical sessions four times a second. Guarded by [genLock],
-     *  the same lock the roll uses, so the memo cannot be filled from a pre-roll read. */
-    private var cachedPreviousSessionsText: String? = null
-
-    /** Line-form twin of [cachedPreviousSessionsText], memoised for the same reason and under
-     *  the same [genLock]. Built from the generations directly — see [buildPreviousSessionsLines]. */
-    private var cachedPreviousSessionsLines: List<String>? = null
-    /** Durable-tail mirror counter, mutated only under [logBuffer]'s monitor (like [logBuffer] itself). */
-    private var logsSincePersist = 0
-
-    private fun strapLogPrefs() = context.getSharedPreferences("noop_prefs", Context.MODE_PRIVATE)
-
-    /** The persisted durable tail, newest-last. Empty when nothing has been logged on this device. */
-    private fun persistedLogTail(): List<String> {
-        val s = strapLogPrefs().getString(STRAP_LOG_TAIL_KEY, null)
-        return if (s.isNullOrEmpty()) emptyList() else s.split('\n')
-    }
-
-    /** Mirror the most recent [LOG_DURABLE_TAIL_LIMIT] lines to SharedPreferences (newline-joined). */
-    private fun persistLogTail(lines: List<String>) {
-        val tail = if (lines.size > LOG_DURABLE_TAIL_LIMIT)
-            lines.subList(lines.size - LOG_DURABLE_TAIL_LIMIT, lines.size) else lines
-        strapLogPrefs().edit().putString(STRAP_LOG_TAIL_KEY, tail.joinToString("\n")).apply()
-    }
-
-    /** The stored generations, oldest-first — each a newline-joined block whose first line is its own header.
-     *  Persisted as a JSON array of strings; a corrupt/absent value reads as none. */
-    private fun persistedLogGenerations(): List<List<String>> {
-        val s = strapLogPrefs().getString(STRAP_LOG_GENERATIONS_KEY, null) ?: return emptyList()
-        return runCatching {
-            val arr = org.json.JSONArray(s)
-            (0 until arr.length()).map { i ->
-                val block = arr.getString(i)
-                if (block.isEmpty()) emptyList() else block.split('\n')
-            }
-        }.getOrDefault(emptyList())
-    }
-
-    private fun persistLogGenerations(gens: List<List<String>>) {
-        val arr = org.json.JSONArray()
-        for (g in gens) arr.put(g.joinToString("\n"))
-        strapLogPrefs().edit().putString(STRAP_LOG_GENERATIONS_KEY, arr.toString()).apply()
-    }
-
-    /**
-     * Roll the surviving durable tail into the generation ring. Idempotent per process (latched) and a NO-OP
-     * when the tail is empty — so a launch that logs nothing (or a run right after a roll) never pushes an
-     * empty generation and never evicts a real one. Runs on the FIRST log() append of the process AND in the
-     * export path, so an export taken before the first append isn't empty (iOS #1264). Serialised on [genLock].
-     */
-    private fun rollLogGenerationsIfNeeded() {
-        synchronized(genLock) {
-            if (didRollGenerations) return
-            didRollGenerations = true
-            val tail = persistedLogTail()
-            if (tail.isEmpty()) return
-            val gens = com.noop.ui.StrapLogGenerations.roll(tail, persistedLogGenerations(), System.currentTimeMillis())
-            persistLogGenerations(gens)
-            // Clear the live slot: this tail now belongs to a generation, and leaving it would duplicate it
-            // in every export until the next mirror overwrites it. Empty string reads back as no tail.
-            strapLogPrefs().edit().putString(STRAP_LOG_TAIL_KEY, "").apply()
-        }
-    }
-
-    /** Flush the current in-memory tail to the durable slot (mirroring is batched every N lines, so a
-     *  disconnect / shutdown flushes the last partial batch — the twin of iOS flushing in clearBiometrics).
-     *  No-throw; called off the per-line path. */
-    private fun flushDurableLogTail() {
+    // ── The strap log on disk ──────────────────────────────────────────────────────────────────────────
+    // The in-memory [logBuffer] dies with the process and keeps 5,000 lines. Every line also goes to disk
+    // ([com.noop.ui.StrapLogArchive], twin of iOS's), so an export carries the runs before a restart and all of
+    // this one. Opened at the first line or export of the process; that first use also carries over what the
+    // #1263 SharedPreferences ring kept, then drops its keys.
+    private val strapLogArchive: com.noop.ui.StrapLogArchive by lazy {
+        val archive = com.noop.ui.StrapLogArchive(java.io.File(context.filesDir, "strap-log"))
         runCatching {
-            val snapshot = synchronized(logBuffer) { logsSincePersist = 0; logBuffer.toList() }
-            if (snapshot.isNotEmpty()) persistLogTail(snapshot)
+            val prefs = context.getSharedPreferences("noop_prefs", Context.MODE_PRIVATE)
+            val tail = prefs.getString(LEGACY_STRAP_LOG_TAIL_KEY, null).orEmpty()
+                .let { if (it.isEmpty()) emptyList() else it.split('\n') }
+            val runs = prefs.getString(LEGACY_STRAP_LOG_GENERATIONS_KEY, null)?.let { json ->
+                runCatching {
+                    val arr = org.json.JSONArray(json)
+                    (0 until arr.length()).map { i -> arr.getString(i).let { if (it.isEmpty()) emptyList() else it.split('\n') } }
+                }.getOrNull()
+            }.orEmpty()
+            archive.importLegacy(com.noop.ui.StrapLogArchive.legacyRingLines(runs, tail, System.currentTimeMillis()))
+            prefs.edit().remove(LEGACY_STRAP_LOG_TAIL_KEY).remove(LEGACY_STRAP_LOG_GENERATIONS_KEY).apply()
         }
+        archive
     }
 
     /** Fired if a scan finds nothing in [SCAN_TIMEOUT_MS]; stops scanning and explains why. */
@@ -3409,6 +3401,22 @@ class WhoopBleClient(
      * Diagnostic only — nothing reads these to make a decision.
      */
     @Volatile
+    /** #2397: how many RSSI readings this link produced, and their worst and total, so the epitaph can
+     *  report a SHAPE rather than a point. #2332 added the ~60s periodic read and kept only the latest
+     *  value, so a link that took 200 readings reported one of them: a field log showed 467 reads across
+     *  three links and two epitaphs naming two numbers. Last alone cannot separate "marginal all along"
+     *  from "walked out of range", which is the question a supervision timeout raises.
+     *
+     *  Free: these are fed by readings the ~60s read ALREADY takes. No extra radio work, no new timer.
+     *
+     *  Plain, not @Volatile, for the reason the frame counters below carry: `+=` is not atomic whatever
+     *  it is annotated with, and an approximate count still answers the question. The stash above is
+     *  volatile because a torn read there would misattribute ONE reading to the wrong link; being one
+     *  reading out in a mean of two hundred changes nothing a reader would act on. */
+    private var rssiReads = 0
+    private var rssiWorstDbm: Int? = null
+    private var rssiSumDbm = 0
+
     private var lastRssiDbm: Int? = null
 
     /** Wall time (ms) [lastRssiDbm] was read. Meaningless unless [lastRssiDbm] is non-null; the two are
@@ -4461,6 +4469,19 @@ class WhoopBleClient(
                 // gated). Whether a 5/MG answers at all is exactly the hardware question being asked.
                 !(cmd == CommandNumber.GET_BATTERY_PACK_INFO &&
                     _batteryPackProbe.value == WAITING_BATTERY_PACK_PROBE) &&
+                // SET_ADVERTISING_NAME (140) over puffin: the #2338 rename WRITE. Reversible (rename
+                // again), but NOT hardware-confirmed on a 5/MG and carrying a payload shape mirrored from
+                // the 4.0 Harvard form rather than observed. Admitted ONLY while a user-confirmed write is
+                // in flight, the 151 tier, so a default install can never form these bytes. Same standing
+                // as REBOOT_STRAP(29) above; that one has no body, this one does.
+                !(cmd == CommandNumber.SET_ADVERTISING_NAME_5MG && advertisingNameWriteArmed) &&
+                // GET_ADVERTISING_NAME (141) over puffin: the #2338 read-only name probe. Gated like 151
+                // above, the hardest of the three tiers, because this opcode has never been sent to any
+                // strap by this app: allowed ONLY while a probe is actually in flight, so a default
+                // install cannot form these bytes at all. The SET side (140) is not in CommandNumber, so
+                // no code path can express a write no matter what this gate says.
+                !(cmd == CommandNumber.GET_ADVERTISING_NAME &&
+                    _advertisingNameProbe.value == WAITING_ADVERTISING_NAME_PROBE) &&
                 // START_FF_KEY_EXCHANGE (117) / SEND_NEXT_FF (118) over puffin: the READ-ONLY feature-flag
                 // ENUMERATION probe (#761) — it reads the strap's own flag NAMES and writes no value. Gated
                 // harder than the probes above: allowed ONLY while a probe is actually in flight, so on a
@@ -4821,6 +4842,43 @@ class WhoopBleClient(
      */
     fun renameStrap(rawName: String) {
         val name = rawName.trim()
+        // #2338: a 5/MG takes the non-Harvard opcode 140 over puffin framing. Reversible, so the BLE
+        // contract admits it, but NOT hardware-confirmed: no strap has been sent this, and the payload
+        // below mirrors the 4.0 Harvard shape rather than anything observed on this family. Test Centre
+        // Connection gated in the CLIENT as well as at the call site, because a gate that lives only in
+        // the UI is one refactor away from being gone. The COMMAND_RESPONSE is logged, so a strap log is
+        // what settles whether the frame was accepted.
+        if (connectedFamily == DeviceFamily.WHOOP5) {
+            if (!testCentre.active(com.noop.testcentre.TestDomain.CONNECTION)) {
+                _state.update { it.copy(renameStatus = "5/MG renaming is experimental. Turn on Test Centre, Connection first.") }
+                log("Strap rename: 5/MG write refused, Test Centre Connection is off (#2338)")
+                return
+            }
+            if (!_state.value.connected || !_state.value.bonded) {
+                _state.update { it.copy(renameStatus = "Connect and pair your strap first.") }
+                return
+            }
+            if (name.isEmpty()) {
+                _state.update { it.copy(renameStatus = "Enter a name first.") }
+                return
+            }
+            // Same 24-byte clamp on a whole-character boundary as the 4.0 path: never split a multibyte
+            // char, and leave room for the rest of the advertising structure.
+            var clamped5 = name
+            while (clamped5.toByteArray(Charsets.UTF_8).size > 24) clamped5 = clamped5.dropLast(1)
+            val payload5 = byteArrayOf(0, 0) + clamped5.toByteArray(Charsets.UTF_8) + byteArrayOf(0)
+            // Arm immediately BEFORE send(): the allow-list admits 140 only while this is true, so arming
+            // afterwards would have our own gate drop our own write.
+            advertisingNameWriteArmed = true
+            send(CommandNumber.SET_ADVERTISING_NAME_5MG, payload5, withResponse = true)
+            handler.postDelayed({ advertisingNameWriteArmed = false }, ADVERTISING_NAME_WRITE_WINDOW_MS)
+            // Redacted like the 4.0 path (#2337): the name is user-chosen and routinely a person's.
+            log("Strap rename: 5/MG write sent, name=${logSafeDeviceName(clamped5)} (opcode 140, unconfirmed, #2338)")
+            _state.update { it.copy(
+                renameStatus = "Sent on an unconfirmed command. Use Check current name to see whether it took.",
+            ) }
+            return
+        }
         if (connectedFamily != DeviceFamily.WHOOP4) {
             _state.update { it.copy(renameStatus = "Renaming is WHOOP 4.0 only.") }
             log("Strap rename: WHOOP 4.0 only — ignored.")
@@ -4988,6 +5046,64 @@ class WhoopBleClient(
             if (_batteryPackProbe.compareAndSet(WAITING_BATTERY_PACK_PROBE, msg)) log(msg)
         }, BATTERY_PACK_PROBE_TIMEOUT_MS)
     }
+
+    /**
+     * #2338 READ-ONLY probe: ask the strap for its BLE advertising name over `GET_ADVERTISING_NAME(141)`.
+     *
+     * Renaming a strap is WHOOP 4.0 only today, over the Harvard pair 76/77. A second-hand 5/MG keeps the
+     * previous owner's name with no way to change it. The schema names a non-Harvard pair, 140 set and 141
+     * get, but nothing in this app has ever sent either, so the opcode numbers rest on the schema alone.
+     *
+     * This asks, and writes nothing. Whether a 5/MG answers 141 at all is the hardware question, and
+     * SILENCE IS A RESULT: it says the number is wrong, or the command is unsupported, either of which
+     * settles whether a rename is reachable before anyone writes 140 at firmware. The set side is not in
+     * [CommandNumber], so no code path can express the write until this returns something.
+     *
+     * User-initiated, Test Centre gated at the call site, and admitted by the 5/MG allow-list only while
+     * the sentinel below is in place. Same shape as `probeBatteryPackInfo` (151) and the #690 / #592
+     * probes. The reply is redacted before it is shown: an advertising name routinely carries a person's
+     * name, which is the whole reason #2338 exists.
+     */
+    fun probeAdvertisingName() {
+        if (!_state.value.connected) {
+            log("Advertising-name probe (141) ignored — not connected")
+            return
+        }
+        // 5/MG only, checked HERE and not just at the call site, for the reason [renameStrap] states: a
+        // gate living only in the UI is one refactor from gone. This matters more than it looks. A 4.0
+        // has NO send allow-list, so on that family the frame would actually reach the wire, and 141 is
+        // the wrong opcode for it anyway — a 4.0 reads its name on 76. Deliberately unlike
+        // [probeBatteryPackInfo], which is offered on both families because a 4.0's silence there is
+        // itself the evidence; here the 4.0 answer is already known.
+        if (connectedFamily != DeviceFamily.WHOOP5) {
+            _advertisingNameProbe.value = "The name probe is WHOOP 5.0/MG only. A 4.0 reads its name on opcode 76."
+            log("Advertising-name probe: 5/MG only — ignored (family=$connectedFamily, #2338)")
+            return
+        }
+        // #2338: drop any standing rename status first. The two share one line in the UI, which prefers
+        // renameStatus, and a rename leaves behind "use Check current name to see whether it took" — so
+        // without this the status would sit there hiding the answer to the very question it asked. The
+        // probe is the newer action, so it owns the line.
+        _state.update { it.copy(renameStatus = null) }
+        // MUST be set before send(): the allow-list admits 141 only while this sentinel is in place, so
+        // setting it afterwards would have our own gate drop our own probe.
+        _advertisingNameProbe.value = WAITING_ADVERTISING_NAME_PROBE
+        log("Advertising-name probe: sending GET_ADVERTISING_NAME(141, read-only) on family=$connectedFamily")
+        send(CommandNumber.GET_ADVERTISING_NAME)
+        // Silence is itself a verdict. ATOMIC compare-and-set so a real reply landing microseconds before
+        // the timeout is never clobbered by this late "no reply".
+        handler.postDelayed({
+            val msg = "Advertising-name probe: no COMMAND_RESPONSE for opcode 141 within " +
+                "${ADVERTISING_NAME_PROBE_TIMEOUT_MS / 1000}s — the strap served no reply. That is the " +
+                "answer for now: renaming stays WHOOP 4.0 only (#2338)."
+            if (_advertisingNameProbe.compareAndSet(WAITING_ADVERTISING_NAME_PROBE, msg)) log(msg)
+        }, ADVERTISING_NAME_PROBE_TIMEOUT_MS)
+    }
+
+    // No clearAdvertisingNameProbe(): unlike the 151 and #690 probes, this result renders INLINE in the
+    // Settings strap-name section rather than in a dialog, so there is no dismiss to hang a clear on. The
+    // next probe replaces it, and a rename masks it (the UI prefers renameStatus). Adding the symmetric
+    // clearer would only add an entry point nothing reaches.
 
     /** Clear the cmd-151 probe result (Devices dialog dismissed). */
     fun clearBatteryPackProbe() { _batteryPackProbe.value = null }
@@ -5854,7 +5970,7 @@ class WhoopBleClient(
     }
 
     /**
-     * Arm the strap's **firmware** alarm to buzz at [epochSec] (absolute UTC seconds). The strap fires
+     * Arm the strap's **firmware** alarm for [epochSec] (absolute UTC seconds). WHOOP 4.0 fires
      * at that instant even if the phone is asleep or NOOP is closed. SET_CLOCK is sent first so the
      * strap's RTC is UTC-correct (a wrong RTC fires the alarm at the wrong wall-clock time). The 4.0
      * payload is `[0x01] + u32 LE epoch + [0x00, 0x00] + [0x00, 0x00]` (9 bytes — see
@@ -5865,12 +5981,13 @@ class WhoopBleClient(
     fun armStrapAlarm(epochSec: Long) {
         if (connectedFamily == DeviceFamily.WHOOP5) {
             // 5/MG SET_ALARM_TIME is REVISION_4 (the strap arms its own RTC alarm + fires the wake
-            // haptic itself). EXPERIMENTAL/UNCONFIRMED on our side — gated behind the Experimental
-            // probes opt-in so a normal user can't rely on an alarm that might silently not fire.
+            // haptic itself). One full wake chain was captured on an MG (#864, 2026-08-25) and a second
+            // wake reported on a 5.0 without a log (#2464); neither has been shown to repeat, so this
+            // stays gated behind Protocol probes and no one relies on it by default.
             // The strap maintains its RTC from the connect handshake / history sync, so no SET_CLOCK
             // here. (PR #85, AlarmPayload)
             if (!PuffinExperiment.from(context).isEnabled) {
-                log("Alarm: 5/MG firmware alarm needs the Experimental toggle (unconfirmed) — not armed")
+                log("Alarm: 5/MG firmware alarm needs Protocol probes (Test Centre) — not armed")
                 return
             }
             send(CommandNumber.SET_ALARM_TIME, AlarmPayload.build(epochSec * 1000L))
@@ -6238,6 +6355,16 @@ class WhoopBleClient(
      *  GATT callbacks (where it's read/reset) land on binder-pool threads on API 26/27. (#48, adopt
      *  from ryanbr — reimplemented under NoopApp) */
     @Volatile
+    /** #2406: when a PASSIVE reconnect was handed to Android, or null when none is outstanding. The
+     *  client does nothing while such a wait runs — no scan, no timer — so without this the log cannot
+     *  tell a long wait from the app having stopped trying. Read once, when the link comes up.
+     *
+     *  Stamped where [passiveReconnectDecision] chooses the passive handoff, NOT wherever
+     *  `autoConnect = true` appears: the radio-on re-arm, the two bond-loop probes and the launch
+     *  auto-reconnect all pass that flag, and none of them is a wait the app chose to sit out. Another
+     *  path can still win the race and bring the link up first, which is why the line says a wait was
+     *  OUTSTANDING rather than claiming which connect answered it. */
+    private var passiveReconnectSinceMs: Long? = null
     private var failedReconnectAttempts = 0
 
     /** Bump the attempt counter and return the next backoff delay. Called from the disconnect path
@@ -6286,6 +6413,12 @@ class WhoopBleClient(
     private fun cancelPendingReconnect() {
         pendingReconnectRunnable?.let { handler.removeCallbacks(it) }
         pendingReconnectRunnable = null
+        // #2406: a passive wait that was called off is not one that was outstanding when a link came up.
+        // The STATE_CONNECTED handler reports BEFORE it calls this, so the wait it describes is the one
+        // that was still pending at that moment; every other caller (a user Connect, the launch
+        // auto-reconnect, a radio-on re-arm) is superseding the wait, and the log should not later credit
+        // it to whichever connect happened to win.
+        passiveReconnectSinceMs = null
     }
 
     /** Run [action] after [delayMs], but ONLY if the SAME continuous connection is still up when it fires.
@@ -6772,6 +6905,15 @@ class WhoopBleClient(
                 BluetoothProfile.STATE_CONNECTED -> {
                     // Port of didConnect: mark connected, negotiate a larger ATT MTU, THEN discover.
                     handler.removeCallbacks(scanTimeoutRunnable)
+                    // #2406: how long a passive wait had been outstanding, reported BEFORE
+                    // cancelPendingReconnect clears it and before the backoff counter below is reset,
+                    // since both are part of what the line says.
+                    passiveReconnectSinceMs?.let { since ->
+                        passiveReconnectSinceMs = null
+                        log(passiveReconnectAnsweredLine(
+                            waitedSeconds = (System.currentTimeMillis() - since) / 1000,
+                            attempts = failedReconnectAttempts))
+                    }
                     // #1030 (ryanbr): a real link is up — cancel any pending involuntary reconnect so a
                     // stale backoff timer can't fire and reset+close this connection.
                     cancelPendingReconnect()
@@ -6795,6 +6937,8 @@ class WhoopBleClient(
                     // #1809: this link's inbound tally starts empty, so the epitaph on disconnect reports
                     // exactly what arrived on THIS link and never a previous session's traffic.
                     inboundFrames = 0; inboundBytes = 0; cmdChannelFrames = 0
+                    // #2397: and the per-link signal shape, for the same reason.
+                    rssiReads = 0; rssiWorstDbm = null; rssiSumDbm = 0
                     // Same guarantee for the rejection tally: a link that opens without a preceding clean
                     // teardown would otherwise report the previous link's rejections as its own.
                     rejectTally.reset(); loggedRejectReasons.clear()
@@ -6961,6 +7105,11 @@ class WhoopBleClient(
             // guarantee: a reader that sees the new value cannot then see an older clock.
             lastRssiAtMs = System.currentTimeMillis()
             lastRssiDbm = rssi
+            // #2397: fold into the per-link shape. AFTER the stale guard, for the same reason the stash
+            // is: a late answer from a dead link must not be counted against the live one's summary.
+            rssiReads += 1
+            rssiSumDbm += rssi
+            rssiWorstDbm = rssiWorstDbm?.let { minOf(it, rssi) } ?: rssi
         }
 
         @SuppressLint("MissingPermission")
@@ -7271,6 +7420,25 @@ class WhoopBleClient(
                     val realtimeWantNow = screenWantsRealtime || continuousCaptureWantsNow()
                     wantsRealtime = realtimeWantNow
                     if (realtimeWantNow) { realtimeArmed = true; realtimeArmedThisLink = true; send(CommandNumber.TOGGLE_REALTIME_HR, byteArrayOf(1)) }
+                    // #2384: start the live-stream keep-alive HERE, on the hello-acked branch, exactly as the
+                    // Swift twin does in its own `.whoop5` branch. Its only other Android caller is
+                    // [runConnectHandshake], which is WHOOP4-only (the guard is a few lines below), and the
+                    // live-HR latch in [parseStandardHr] is guarded by `!state.bonded` — which the update at
+                    // the top of THIS block has just closed. So a 5/MG that bonds by CLIENT_HELLO started no
+                    // keep-alive at all, on any link, and with it none of what that tick owns: the one-shot
+                    // 0x2A37 re-subscribe when the stream goes quiet, the stall bounce, the #1865 realtime
+                    // re-arm, the #927 overnight-window re-derivation, the #2332 periodic RSSI read and the
+                    // ~60s battery poll. Every recovery for a dead live stream sat behind a start condition
+                    // that a dead live stream cannot meet.
+                    //
+                    // A reporter's log shows the shape of the absence rather than the bug itself: ten links,
+                    // `live hr=0 rr=0` on every one, exactly one `Signal: RSSI` line per link (the read at
+                    // connect, never the periodic one) and a battery cadence with a 13-minute hole in it.
+                    //
+                    // Idempotent and cheap to reach twice: [startKeepAlive] cancels its own callback before
+                    // re-posting, and [keepAliveFire] returns unless the link is connected and bonded, stands
+                    // aside entirely while backfilling, and carries the wide 5/MG stall fuse (#580/#1414).
+                    startKeepAlive()
                 }
             } else if (!didBond && connectedFamily == DeviceFamily.WHOOP4) {
                 didBond = true
@@ -7537,6 +7705,7 @@ class WhoopBleClient(
                 // both correct and cheap. Twin of the Swift `FrameRouter.noteReassemblerDrops`.
                 val completedFrames = reassembler.feed(bytes)
                 rejectTally.absorbReassemblerDrops(reassembler.belowMinimumLengthDrops)
+                rejectTally.absorbReassemblerHeaderDrops(reassembler.headerChecksumDrops)
                 for (frame in completedFrames) {
                   // #453 defense-in-depth: this loop runs on the GATT binder thread; an uncaught throw
                   // from ANY frame op (handleFrame, a decoder, the inline date-format, log) would crash
@@ -7623,6 +7792,23 @@ class WhoopBleClient(
                         // sink the scrubber otherwise never sees — and the `raw:` frame dump carries the
                         // serial as ASCII inside the hex, which is exactly what redactStrapLogPii masks.
                         _batteryPackProbe.value = redactStrapLogPii(text)
+                    }
+                    // #2338: a reply to the read-only advertising-name probe (141). In-flight-guarded like
+                    // 151 above, for the same reason: 0x8D could coincidentally be some data frame's
+                    // cmd-offset byte, and a stray match must never pop a user-triggered dialog.
+                    if (frame.size > cmdOff && (frame[cmdOff].toInt() and 0xFF) == CommandNumber.GET_ADVERTISING_NAME.rawValue &&
+                        _advertisingNameProbe.value == WAITING_ADVERTISING_NAME_PROBE) {
+                        val decoded = advertisingNameFromWhoop5Response(frame)
+                        // Redact BEFORE anything is stored or logged. An advertising name carries a
+                        // person's name (#2337), and this value also renders behind a copy button, a sink
+                        // the log scrubber never sees.
+                        val text = if (decoded != null) {
+                            "the strap answered 141 with a name: ${logSafeDeviceName(decoded)}"
+                        } else {
+                            "the strap answered 141, but the payload held no printable name"
+                        }
+                        log("Advertising-name probe (141): $text")
+                        _advertisingNameProbe.value = redactStrapLogPii(text)
                     }
                     // #761: a reply to the read-only feature-flag enumeration (117/118). In-flight-guarded
                     // inside handleFeatureFlagProbeResponse, so this is a byte compare on every other frame.
@@ -7744,7 +7930,12 @@ class WhoopBleClient(
                             // the strap's device time with the wall time of the same instant (see field doc).
                             strapNewestTsWall = System.currentTimeMillis() / 1000L
                             // #34: persist the strap's newest banked record so the debug export can flag a reset clock.
+                            // Keyed by the address that sent THIS reply as well as the legacy global, because
+                            // the global cannot say which strap it came from: on a two-strap install it made the
+                            // alarm section assert "alarm unreliable" about an active 5/MG from a paired 4.0's
+                            // clock. The global stays for single-strap installs across the upgrade.
                             runCatching { NoopPrefs.of(context).edit().putLong("strap.newestRecordTs", it).apply() }
+                            runCatching { NoopPrefs.setStrapNewestRecordTsFor(context, lastDeviceAddress, it) }
                             // #928: flag an implausibly FUTURE "newest" (strap clock set ahead) right where
                             // it lands, so a Test Centre export shows WHY auto-continue refused the range.
                             val wallNowForSkew = System.currentTimeMillis() / 1000L
@@ -8214,6 +8405,18 @@ class WhoopBleClient(
                             "frame=${frame.joinToString("") { "%02x".format(it) }}",
                     )
                 }
+                if (connectedFamily == DeviceFamily.WHOOP4 &&
+                    respCmd?.startsWith("TOGGLE_GENERIC_HR_PROFILE") == true
+                ) {
+                    // #2400: an acknowledgement is evidence that opcode 14 was answered, not a read-back
+                    // of the advertising state. Keep the decoded result and full frame for comparison
+                    // across firmware without presenting either as confirmation of the physical effect.
+                    log(
+                        "Broadcast HR: WHOOP 4 command response received " +
+                            "result=${result ?: "none"}, effect not confirmed " +
+                            "frame=${frame.joinToString("") { "%02x".format(it) }}",
+                    )
+                }
                 // 5/MG range-query gate: a GET_DATA_RANGE SUCCESS releases the history request
                 // (PENDING precedes it; the 2s fail-open fallback covers a swallowed reply). (#78 fork)
                 if (connectedFamily == DeviceFamily.WHOOP5 && backfilling && !historicalKickSent &&
@@ -8570,6 +8773,15 @@ class WhoopBleClient(
             }
         }
 
+        // #2384: one line per 30s saying the standard profile delivered a reading, and whether it was
+        // usable. Emitted BEFORE the gates below, which is the whole point: a value they drop leaves no
+        // other trace. Port of the iOS `HR notify:` line.
+        val hrNotifyNowMs = System.currentTimeMillis()
+        if (shouldLogStandardHrNotify(lastStandardHrNotifyLogMs, hrNotifyNowMs)) {
+            lastStandardHrNotifyLogMs = hrNotifyNowMs
+            log(standardHrNotifyLine(hr, rr.size))
+        }
+
         // R-R: the standard profile is the reliable source — surface whenever present. withRRIntervals
         // also feeds the Live console's rolling rrRecent buffer.
         if (rr.isNotEmpty()) _state.update { it.withRRIntervals(rr) }
@@ -8658,6 +8870,8 @@ class WhoopBleClient(
         handler.postDelayed({ requestSync(BackfillTrigger.CONNECT) }, INITIAL_BACKFILL_DELAY_MS)
         startBackfillTimer()
         startKeepAlive()
+        // WHOOP 4's broadcast mode is link/runtime state, so restore an opted-in mode after reconnect.
+        if (PuffinExperiment.from(context).broadcastHr) setBroadcastHr(true)
         // Arm realtime HR now if a screen already wants it (Live/Health Monitor opened before the bond
         // completed) OR the continuous-capture preference wants it — otherwise the stream would only
         // start at the next keep-alive tick (issue #18). Mark it armed so reconcileRealtime() tracks the
@@ -8980,20 +9194,20 @@ class WhoopBleClient(
         refreshConnectionPriority()   // #477: live-HR on → HIGH, off → back to idle. No-op unless enabled.
     }
 
-    /**
-     * EXPERIMENTAL (#181): make the strap advertise its heart rate as a standard BLE HR sensor by
-     * writing the device-config flag whoop_live_hr_in_adv_ind_pkt = "1" (on) / "0" (off) via
-     * SET_DEVICE_CONFIG (0x77). Validated on real hardware: with it on, the strap advertises 0x180D +
-     * the live HR in its manufacturer data, so a Garmin (Edge/watch), Zwift or gym HR client pairs to it
-     * directly. Reversible; opt-in. Mirrors `BLEManager.setBroadcastHr`. (Broadcast HR)
-     */
+    /** Make the strap advertise as a standard BLE HR sensor. WHOOP 4 uses its reversible
+     * TOGGLE_GENERIC_HR_PROFILE command; WHOOP 5/MG keeps the existing device-config path. */
     fun setBroadcastHr(on: Boolean) {
-        if (connectedFamily != DeviceFamily.WHOOP5) {
-            log("Broadcast HR: needs a WHOOP 5.0/MG strap — ignored."); return
-        }
         val s = _state.value
         if (!s.connected || !s.bonded) {
-            log("Broadcast HR: connect and bond a 5/MG strap first — ignored."); return
+            log("Broadcast HR: connect and bond the strap first — ignored."); return
+        }
+        if (connectedFamily == DeviceFamily.WHOOP4) {
+            send(CommandNumber.TOGGLE_GENERIC_HR_PROFILE, byteArrayOf(if (on) 1.toByte() else 0.toByte()))
+            log("Broadcast HR: WHOOP 4 ${if (on) "enable" else "disable"} command sent (14); effect not confirmed.")
+            return
+        }
+        if (connectedFamily != DeviceFamily.WHOOP5) {
+            log("Broadcast HR: strap family is not known yet — ignored."); return
         }
         // Mutually exclusive with the ECG gate: both verify over the SAME 121 read-back opcode, so if both
         // were in flight one strap reply would be consumed by both handlers and cross-contaminate the other's
@@ -10057,7 +10271,8 @@ class WhoopBleClient(
             .filter { it.ok && it.typeName == "REALTIME_DATA" }
             .mapNotNull { (it.parsed["timestamp"] as? Number)?.toInt() }
             .maxOrNull() ?: now
-        val streams: Streams = extractStreams(parsed, deviceClockRef = newestRealtimeTs, wallClockRef = now)
+        val streams: Streams = extractStreams(parsed, deviceClockRef = newestRealtimeTs,
+            wallClockRef = now, family = connectedFamily)
         val batch = StreamPersistence.toBatch(streams)
         // #1118: the SECOND live transport. The standard 0x2A37 path above stamps a beat at the second
         // it arrived; this one stamps it from the strap's own record clock. The same beat reaching both
@@ -10125,8 +10340,11 @@ class WhoopBleClient(
                                  family: DeviceFamily) {
         val shouldFlush = synchronized(collectorLock) {
             if (hr in 30..220) stdHr.add(HrRow(ts, hr))
-            val source = if (family == DeviceFamily.WHOOP5)
-                com.noop.protocol.RrSourceChannel.WHOOP5_STANDARD else null
+            val source = when (family) {
+                DeviceFamily.WHOOP5 -> com.noop.protocol.RrSourceChannel.WHOOP5_STANDARD
+                DeviceFamily.WHOOP4 -> com.noop.protocol.RrSourceChannel.WHOOP4_STANDARD
+                else -> null
+            }
             for (r in rr) if (r in 250..3000) stdRr.add(RrRow(ts, r, source))
             stdContact.add(StandardHrMapping.contactEvent(ts, contact))
             standardHrBufferReachedFlushThreshold(stdHr.size, stdRr.size, stdContact.size)
@@ -10710,7 +10928,7 @@ class WhoopBleClient(
         handler.removeCallbacks(backfillTimeoutRunnable)
         backfillDrain.clear()
         closeWhoop5BackfillCapture(flushSummary = true)
-        log("Backfill: session ended — reason=$reason")
+        log("Backfill: session ended — reason=$reason" + sessionEndedOutcome(reason, persistedSensorRows))
         // Downstream export also treats a WHOOP 4 idle timeout with persisted rows as successful: that
         // firmware routinely finishes productive offloads without emitting HISTORY_COMPLETE.
         if (shouldNotifySuccessfulOffload(reason, persistedSensorRows)) {
@@ -11057,10 +11275,6 @@ class WhoopBleClient(
         // (not stranded), and the next connection starts a fresh window rather than spanning the gap. No-op
         // when capture is off. Do it BEFORE the connect-down line so the summary reads before the drop.
         flushFrameTimingSummary()
-        // #1263: flush the durable strap-log tail so a completed session's last partial batch survives to a
-        // later export even if the process is killed before the next 32-line mirror (twin of iOS's flush on
-        // disconnect). The connect-down line logged just below still mirrors again once it crosses a batch.
-        flushDurableLogTail()
         // Snapshot the hold time and clear it IMMEDIATELY: every drop log below reads the snapshot, and a
         // stale `linkUpSinceMs` surviving into the next drop would report a hold time for a link that never
         // reached STATE_CONNECTED — the diagnostic would then invent exactly the evidence it exists to find.
@@ -11089,6 +11303,7 @@ class WhoopBleClient(
                 cmdChannelFrames = cmdChannelFrames, realtimeArmed = realtimeArmedThisLink,
                 rssiDbm = rssiAtDrop,
                 rssiAgeMillis = rssiAgeAtDrop,
+                rssiReads = rssiReads, rssiWorstDbm = rssiWorstDbm, rssiSumDbm = rssiSumDbm,
                 // #1820 parity: Apple's epitaph reports "intentional" for a deliberate teardown rather
                 // than an error code, and a field log showed Android printing "ended=status=0" for the
                 // same event. Two reports of the same drop should not read differently. The flag is set
@@ -11120,6 +11335,7 @@ class WhoopBleClient(
         }
         // Clear the tally with the link, so a second teardown for the same drop cannot re-report it.
         inboundFrames = 0; inboundBytes = 0; cmdChannelFrames = 0
+        rssiReads = 0; rssiWorstDbm = null; rssiSumDbm = 0
         rejectTally.reset(); loggedRejectReasons.clear()
         liveHr.set(0); liveRr.set(0); offloadHr.set(0); offloadRr.set(0)
         offloadGravity.set(0); offloadResp.set(0); offloadSkinTemp.set(0)
@@ -11466,6 +11682,14 @@ class WhoopBleClient(
                 log("Disconnected ${disconnectStatusLabel(status)}; reconnecting ${if (passiveReconnect) "passively" else "directly"} in ${directDelay / 1000}s (attempt $failedReconnectAttempts$heldSuffix${if (aclHeld) ", ACL-held" else ""})")
                 // #1030 (ryanbr): cancellable backoff timer (see scheduleReconnect).
                 scheduleReconnect(directDelay) { connectToDevice(dev, autoConnect = passiveReconnect) }
+                // #2406: only the PASSIVE handoff is the silence worth timing. `autoConnect = true` is
+                // not the same thing: the radio-on re-arm, the two bond-loop probes and the launch
+                // auto-reconnect all pass it, and none of them is a wait the app chose to sit out.
+                //
+                // Stamped AFTER scheduleReconnect, which opens with cancelPendingReconnect() and so
+                // clears this field. Stamping first set it and wiped it microseconds later, leaving the
+                // line unreachable: a 23 Sep field log has two passive reconnects and none of it.
+                if (passiveReconnect) passiveReconnectSinceMs = System.currentTimeMillis()
             } else {
                 val rescanDelay = nextReconnectDelayMs()
                 log("Disconnected ${disconnectStatusLabel(status)}; rescanning in ${rescanDelay / 1000}s (attempt $failedReconnectAttempts$heldSuffix)")
@@ -11608,7 +11832,6 @@ class WhoopBleClient(
      * (e.g. AppViewModel.onCleared) AFTER [disconnect]. Idempotent.
      */
     fun shutdown() {
-        flushDurableLogTail()   // #1263: persist the last partial tail batch before we go away
         ioScope.cancel()
     }
 
@@ -11854,10 +12077,6 @@ class WhoopBleClient(
         // in here may propagate. (The regex bug itself is also fixed; this guarantees the class can't
         // recur.)
         try {
-            // #1263: FIRST append of this process — rescue the previous process's durable tail into the
-            // generation ring BEFORE this process's own mirror overwrites it. Latched + a no-op on an empty
-            // tail, so this is one guarded check per line after the first.
-            rollLogGenerationsIfNeeded()
             // Scrub personal identifiers FIRST so a user can safely share the strap log (#445), THEN
             // apply the optional Test Centre domain tag in front of the already-safe line.
             val safe = taggedStrapLogLine(redactPii(s), domain)
@@ -11865,23 +12084,16 @@ class WhoopBleClient(
             // emit the strap log to the system log. The in-app ring buffer below always records.
             if (debugLogcat) Log.d(TAG, safe)
             // Mirror into the in-app ring buffer (format under the lock — SimpleDateFormat isn't
-            // thread-safe and log() is called from both the GATT binder thread and the main looper).
-            // #1263: while under the lock, snapshot the tail for the durable mirror every N lines (so the
-            // SharedPreferences write itself happens OUTSIDE the monitor, off the hot per-line path).
-            var tailToPersist: List<String>? = null
+            // thread-safe and log() is called from both the GATT binder thread and the main looper), and onto
+            // disk under the same lock, so the file keeps the buffer's order. One ~100-byte write per line.
             val stamped = synchronized(logBuffer) {
                 val line = "${logTimeFmt.format(System.currentTimeMillis())}  $safe"
                 logBuffer.addLast(line)
                 while (logBuffer.size > LOG_BUFFER_MAX) logBuffer.removeFirst()
-                if (++logsSincePersist >= LOG_TAIL_PERSIST_EVERY) {
-                    logsSincePersist = 0
-                    tailToPersist = logBuffer.toList()
-                }
+                strapLogArchive.append(line)
                 line
             }
             _logRevision.update { it + 1 }
-            // #1263: durable-tail mirror (batched), OUTSIDE the logBuffer monitor.
-            tailToPersist?.let { persistLogTail(it) }
             // #1121: when detailed capture is on, ALSO append the (already PII-scrubbed) line to the
             // rolling on-device file, so a long-running issue is captured for hours rather than only the
             // ~5000-line (~50 min) in-memory ring. No-op + near-zero cost when capture is off, and inside
@@ -12047,47 +12259,16 @@ class WhoopBleClient(
      *  would be a stronger claim than the code makes.
      *
      *  Only the share/export paths, which genuinely need one string, pay for the join. */
-    fun exportLogLines(): List<String> {
-        rollLogGenerationsIfNeeded()
-        val previous = synchronized(genLock) {
-            cachedPreviousSessionsLines
-                ?: buildPreviousSessionsLines().also { cachedPreviousSessionsLines = it }
-        }
-        val snapshot = synchronized(logBuffer) { logBuffer.toList() }
-        return if (previous.isEmpty()) snapshot else previous + snapshot
-    }
-
-    /** The previous-session lines exactly as [com.noop.ui.StrapLogGenerations.previousSessionsText] would
-     *  render them, taken from the generations themselves so no string is built and re-split. Empty when
-     *  there are no previous sessions, matching that function's empty-string case. */
-    private fun buildPreviousSessionsLines(): List<String> =
-        com.noop.ui.StrapLogGenerations.previousSessionsLines(persistedLogGenerations())
+    fun exportLogLines(): List<String> = strapLogArchive.exportLines()
 
     /**
-     * Snapshot of the recent strap log, newest last, for the "Share strap log" diagnostics export.
-     *
-     * #1263: previous app sessions come FIRST (oldest-first, each with its own header, then a
-     * "===== current app session =====" marker), so `report.txt` stays chronological and the log-parsing
-     * tools read it unchanged — they just get the session a restart used to erase. We roll here too, not only
-     * in [log], because a user can open the app and export BEFORE this process logs its first line — at which
-     * point the surviving tail is still unrolled and [logBuffer] is empty. The roll is latched + a no-op on an
-     * empty tail, so it's harmless when [log] already ran.
+     * The strap log for the "Share strap log" diagnostics export: the earlier runs oldest-first, each under its
+     * own header, then a "===== current app session =====" marker and the whole of this run — from disk
+     * ([com.noop.ui.StrapLogArchive]), so the runs before a restart are kept, and this run is not cut to the
+     * 5,000 lines [logBuffer] holds. `report.txt` stays chronological and the log-parsing tools read it
+     * unchanged. An export taken before this process logs its first line still carries the run before it.
      */
-    fun exportLogText(): String {
-        rollLogGenerationsIfNeeded()
-        val previous = synchronized(genLock) {
-            cachedPreviousSessionsText
-                ?: com.noop.ui.StrapLogGenerations.previousSessionsText(persistedLogGenerations())
-                    .also { cachedPreviousSessionsText = it }
-        }
-        // #1468 follow-up: COPY the buffer under the lock and join outside it. The join allocates one string
-        // per line plus the result — thousands of lines during an offload — and `log()` is called from the
-        // GATT binder thread, which blocks on this same lock for every line it writes. Holding it only for a
-        // reference copy keeps a readout refresh from throttling the writer it is reading. Output is
-        // byte-identical either way.
-        val snapshot = synchronized(logBuffer) { logBuffer.toList() }
-        return previous + snapshot.joinToString("\n")
-    }
+    fun exportLogText(): String = strapLogArchive.exportText()
 }
 
 // PII scrubbers for the shareable strap log (#445). Kept at FILE scope (not inside WhoopBleClient) so
@@ -12216,6 +12397,29 @@ internal fun whoop5CommandResponsePayload(frame: ByteArray): ByteArray? {
     val start = 13
     if (length > frame.size || start >= length) return null
     return frame.copyOfRange(start, length)
+}
+
+/**
+ * #2338: the advertising name carried by a GET_ADVERTISING_NAME COMMAND_RESPONSE from a 5/MG.
+ *
+ * Printable ASCII out of the 5/MG payload, trimmed. Mirrors the shape of Swift
+ * `FrameRouter.advertisingName`, but off [whoop5CommandResponsePayload] rather than the 4.0 envelope:
+ * reading a 5/MG frame with the 4.0 helper does not fail, it returns four bytes of envelope dressed as
+ * payload, which is the exact mistake bhelm/noop#4 was.
+ *
+ * null when the frame carries no payload; null ALSO when the payload holds no printable bytes at all,
+ * which is the answer to "did the strap reply with something that is not a name". An empty string
+ * would read as "the strap says its name is blank", a claim this cannot support.
+ *
+ * Pure and file-scope so the decode is unit-testable without a BLE stack, the [whoop4AlarmPayload]
+ * idiom. What the bytes MEAN on a 5/MG is unverified: no strap has answered 141 yet, and this exists
+ * to find out.
+ */
+internal fun advertisingNameFromWhoop5Response(frame: ByteArray): String? {
+    val payload = whoop5CommandResponsePayload(frame) ?: return null
+    val printable = payload.filter { it >= 32 && it < 127 }.toByteArray()
+    if (printable.isEmpty()) return null
+    return String(printable, Charsets.UTF_8).trim().takeIf { it.isNotEmpty() }
 }
 
 /** Space-separated lowercase hex of a COMMAND_RESPONSE payload, for the raw-hex diagnostic fallback

@@ -72,6 +72,7 @@ struct LiquidTodayView: View {
     @State private var stepsEst: Double?           // steps_est, day-keyed to the selected day (fallback)
     @State private var importedStepsDay: Int?      // Apple Health steps for the selected day (middle tier)
     @State private var importedActiveKcalDay: Double?  // #616: Apple Health active energy for the day (calorie fallback)
+    @State private var weightKg: Double?           // #204: Apple Health weight ?: profile fallback
     @State private var hrValues: [Double] = []     // hrBuckets since midnight → 5-min means
     /// Line identity for [hrValues], from the bucket timestamps this used to discard (#2082).
     ///
@@ -93,6 +94,7 @@ struct LiquidTodayView: View {
     // cheap heart-rate fingerprint and memoises, so the widget, this shell and the other Today view all
     // share one computation rather than scoring the day three times.
     @State private var hostedStressHours: [DaytimeStress.HourPoint] = []
+    @State private var hostedStressActivityMaskedHours = 0
 
     // sheets / expanders
     @State private var customizationDestination: TodayCustomizationDestination?
@@ -130,6 +132,8 @@ struct LiquidTodayView: View {
     // day navigation (0 = today, 1 = yesterday, …)
     @State private var selectedDayOffset = 0
     @State private var showDayPicker = false
+    @State private var heartRateCardFrame: CGRect = .null
+    private static let daySwipeSpace = "liquidTodayDaySwipeSpace"
 
     // PERF: the body was rescanning repo.days (599 days) ~23× per pass for displayDay and ~3× for
     // readiness on EVERY re-render (every HR notify, every canvas frame that invalidates, every scroll).
@@ -267,13 +271,15 @@ struct LiquidTodayView: View {
             }
         )
     }
-    /// Horizontal swipe between days (left = older, right = newer), clamped to [today, earliest].
+    /// Horizontal swipe between days (right = older, left = newer — `TodayView.daySwipeDelta`, #2378),
+    /// clamped to [today, earliest].
     private var daySwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 24)
+        DragGesture(minimumDistance: 24, coordinateSpace: .named(Self.daySwipeSpace))
             .onEnded { value in
+                guard !heartRateCardFrame.contains(value.startLocation) else { return }
                 let dx = value.translation.width, dy = value.translation.height
                 guard abs(dx) > abs(dy) * 1.5, abs(dx) > 50 else { return }
-                let delta = dx < 0 ? 1 : -1
+                let delta = TodayView.daySwipeDelta(dx: dx)
                 let next = Self.clampedDayOffset(current: selectedDayOffset, delta: delta,
                                                  maxOffset: earliestDayOffset)
                 guard next != selectedDayOffset else { return }
@@ -459,6 +465,8 @@ struct LiquidTodayView: View {
             }
             .ignoresSafeArea()
         }
+        .coordinateSpace(name: Self.daySwipeSpace)
+        .onPreferenceChange(LiquidHeartRateCardFrameKey.self) { heartRateCardFrame = $0 }
         // Swipe left/right to change DAYS (WHOOP-style). Tab-swipe is disabled on Today in RootTabView so
         // this owns the horizontal gesture here.
         .simultaneousGesture(daySwipeGesture)
@@ -777,6 +785,12 @@ struct LiquidTodayView: View {
             }
             .buttonStyle(LiquidPressStyle())
             .accessibilityHint("Opens the full-day heart rate timeline")
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(key: LiquidHeartRateCardFrameKey.self,
+                                           value: geometry.frame(in: .named(Self.daySwipeSpace)))
+                }
+            }
         }
     }
 
@@ -864,6 +878,12 @@ struct LiquidTodayView: View {
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textTertiary)
                             .frame(maxWidth: .infinity, minHeight: 60, alignment: .center)
+                    }
+                    if let maskedCaption = stressActivityMaskedHoursCaption(hostedStressActivityMaskedHours) {
+                        Text(maskedCaption)
+                            .font(StrandFont.footnote)
+                            .foregroundStyle(StrandPalette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -1512,7 +1532,11 @@ struct LiquidTodayView: View {
             // max, so the stored row simply won) which is why it went unnoticed. 200_000 is what every
             // other whole-window HR consumer already passes.
             let todayHr = await repo.hrSamples(from: from, to: to, limit: 200_000)
-            let maxHR = profile.age > 0 ? StrainScorer.tanakaHRmax(age: Double(profile.age)) : nil
+            // #2460: the manual HR-max override, then Tanaka, exactly as AnalyticsEngine resolves it
+            // for the STORED day. These two numbers meet in `effectiveEffort`, which takes the larger,
+            // so a live value on the formula's yardstick outvoted an override set because the real
+            // maximum is above it. See `ProfileStore.effortHRmax`.
+            let maxHR = profile.effortHRmax
             let restHR = day?.restingHr.map(Double.init) ?? StrainScorer.defaultRestingHR
             liveStrainLocal = StrainScorer.strain(todayHr, maxHR: maxHR, restingHR: restHR,
                                                   method: PuffinExperiment.effortMethod, sex: profile.sex)
@@ -1529,6 +1553,7 @@ struct LiquidTodayView: View {
         async let stepsA = repo.exploreSeries(key: "steps_est", source: "my-whoop")
         // Queue 11a: SpO₂ candidate fallback (see `spo2CandidateByDay`'s declaration).
         async let spo2CandA = repo.exploreSeries(key: "spo2_candidate", source: "my-whoop")
+        async let weightA = repo.series(key: "weight", source: "apple-health", days: 91)
         async let appleA = repo.appleDailyRows()
         async let hrA = repo.hrBuckets(from: from, to: to, bucketSeconds: 300)
         async let wkA = repo.workoutRows()
@@ -1582,6 +1607,15 @@ struct LiquidTodayView: View {
         // #616: same-day imported active energy — the calorie fallback when the strap banked no on-device
         // HR estimate for the day, so the tile/card/detail agree (imported-first, mirrors steps).
         importedActiveKcalDay = (await appleA).filter { $0.day == selectedDayKey }.compactMap { $0.activeKcal }.max()
+
+        // Weight for the SELECTED day: prefers a real Apple-Health reading (today's daily, else the
+        // "weight" series' newest point so a sparse-but-recent value still renders). Falls back to the
+        // user's profile weight in the renderer (weightTile).
+        let appleRows = await appleA
+        let weightSeries = await weightA
+        weightKg = appleRows.filter { $0.day == selectedDayKey }.compactMap { $0.weightKg }.max()
+            ?? weightSeries.last(where: { $0.day <= selectedDayKey })?.value
+
         // Awaited ONCE: the timestamps and the means have to come from the same read, or the segments
         // would describe a different series than the one drawn.
         let hrBuckets = await hrA
@@ -1634,9 +1668,17 @@ struct LiquidTodayView: View {
         }
 
         // #2040: and today's stress, on the same "only when hosted" rule.
-        hostedStressHours = HostedCardPrefs.decodeEnabled(hostedCardsRaw).contains(.stressToday)
-            ? (await StressDayCurve.today(repo: repo)?.result.timeline ?? [])
-            : []
+        if HostedCardPrefs.decodeEnabled(hostedCardsRaw).contains(.stressToday) {
+            let result = await StressDayCurve.today(
+                repo: repo,
+                personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled
+            )?.result
+            hostedStressHours = result?.timeline ?? []
+            hostedStressActivityMaskedHours = result?.activityMaskedHours ?? 0
+        } else {
+            hostedStressHours = []
+            hostedStressActivityMaskedHours = 0
+        }
 
         // First load done — bring the hero gauges + sky to life now the launch churn has settled.
         if !dataLoaded { withAnimation(.easeIn(duration: 0.4)) { dataLoaded = true } }
@@ -1832,6 +1874,16 @@ struct LiquidTodayView: View {
         return UnitFormatter.effortDisplay(s, scale: effortScale)
     }
 
+    /// The Weight tile's display string + an honest caption ("from profile" only on the fallback).
+    /// Always formatted through the shared `UnitFormatter` so the Imperial/Metric toggle reaches this
+    /// tile. Mirrors the classic TodayView's `weightTile`.
+    private func weightTile(_ appleWeightKg: Double?) -> (value: String, caption: String) {
+        if let kg = appleWeightKg {
+            return (UnitFormatter.massFromKilograms(kg, system: unitSystem), String(localized: "latest"))
+        }
+        return (UnitFormatter.massFromKilograms(profile.weightKg, system: unitSystem), String(localized: "from profile"))
+    }
+
     private func workoutSub(_ w: WorkoutRow) -> String {
         var parts: [String] = []
         let secs = w.durationS ?? Double(max(w.endTs - w.startTs, 0))
@@ -1862,6 +1914,12 @@ struct LiquidTodayView: View {
         return TodayView.carriedCaption(priorDayKey: carried.day,
                                         todayKey: displayDay?.day ?? selectedDayKey)
     }
+}
+
+/// Measures the heart-rate card in the same coordinate space as the day-swipe gesture.
+private struct LiquidHeartRateCardFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .null
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
 }
 
 /// Carries the Today scroll's top overscroll offset up to the view for the custom liquid pull-to-refresh.
@@ -2074,14 +2132,20 @@ private struct LiquidLiveHR: View {
     @EnvironmentObject private var live: LiveState
     @State private var samples: [Double] = []
     @State private var beat = false
+    @State private var scrubX: CGFloat?
+    #if os(iOS)
+    @State private var scrubEngaged = false
+    #endif
     private let maxSamples = 90   // ~1.5 min of 1 Hz live HR, enough to read the shape
 
     private var isLive: Bool { live.connected && samples.count >= 2 }
     private var series: [Double] { isLive ? samples : fallback }
+    /// The big number is the LIVE heart rate only. It used to fall back to the last banked 5-minute average, drawn
+    /// exactly like a live reading, so with the strap off the wrist the card went on showing one (a tester's 91). The
+    /// day's trace and its labelled min / avg / max still show without a live strap.
     private var bigBpm: Int? {
-        if let hr = live.heartRate, hr > 0, live.connected { return hr }
-        if let last = fallback.last { return Int(last.rounded()) }
-        return nil
+        guard let hr = live.heartRate, hr > 0, live.connected else { return nil }
+        return hr
     }
     private var subtitle: String {
         if isLive { return String(localized: "Live · beat by beat") }
@@ -2137,6 +2201,21 @@ private struct LiquidLiveHR: View {
                 }
                 .frame(height: 92)
                 .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.space2, style: .continuous))
+                .contentShape(Rectangle())
+                .overlay { scrubReadout }
+                .onContinuousHover(coordinateSpace: .local) { phase in
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        switch phase {
+                        case .active(let location): scrubX = location.x
+                        case .ended: scrubX = nil
+                        }
+                    }
+                }
+                #if os(iOS)
+                .gesture(touchScrubGesture)
+                #endif
                 HStack {
                     stat(String(localized: "Min"), series.min())
                     Spacer()
@@ -2156,7 +2235,9 @@ private struct LiquidLiveHR: View {
         }
         .onAppear { if samples.isEmpty, let hr = live.heartRate, hr > 0 { samples = [Double(hr)] } }
         .onChangeCompat(of: live.heartRate) { hr in
-            guard let hr, hr > 0 else { return }
+            // No live heart rate (the strap off the wrist, or gone): drop the trace, so the card stops calling an
+            // old one "Live" and shows today's average under its own label.
+            guard let hr, hr > 0 else { samples.removeAll(); return }
             samples.append(Double(hr))
             if samples.count > maxSamples { samples.removeFirst(samples.count - maxSamples) }
             beat.toggle()
@@ -2170,6 +2251,62 @@ private struct LiquidLiveHR: View {
                 .font(StrandFont.captionNumber).foregroundStyle(StrandPalette.textSecondary)
         }
     }
+
+    /// Uses the thread renderer's ten-point inset and equal-distance sample positions, so the
+    /// readout points to the value actually drawn under the finger even for a sparse banked trace.
+    private var scrubReadout: some View {
+        GeometryReader { geometry in
+            if let scrubX, series.count >= 2 {
+                // The renderer's own mapping, not a copy of it: a private inset or span floor here would
+                // agree by inspection and then drift the crosshair off the curve the moment either moved.
+                let plot = LiquidRender.ThreadPlot(size: geometry.size, values: series)
+                let index = plot.nearestIndex(toX: Double(scrubX))
+                let width = geometry.size.width
+                let x = CGFloat(plot.x(index))
+                let y = CGFloat(plot.y(series[index]))
+                Path { path in
+                    path.move(to: CGPoint(x: x, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+                }
+                .stroke(tint, lineWidth: NoopMetrics.hairlineWidth)
+                Circle().fill(tint).frame(width: 8, height: 8).position(x: x, y: y)
+                (Text("\(Int(series[index].rounded()))").font(StrandFont.captionNumber)
+                    + Text(" bpm").font(StrandFont.caption))
+                    .foregroundStyle(StrandPalette.textPrimary)
+                    .padding(.horizontal, NoopMetrics.space2)
+                    .padding(.vertical, NoopMetrics.space1)
+                    .background(StrandPalette.surfaceBase.opacity(0.9), in: Capsule())
+                    .position(x: min(max(x, 48), max(48, width - 48)), y: 15)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    #if os(iOS)
+    private var touchScrubGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.25, maximumDistance: 8)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+            .onChanged { value in
+                guard case .second(true, let drag) = value else { return }
+                if !scrubEngaged {
+                    scrubEngaged = true
+                    StrandHaptic.selection.play()
+                }
+                if let drag {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) { scrubX = drag.location.x }
+                }
+            }
+            .onEnded { _ in
+                scrubEngaged = false
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { scrubX = nil }
+            }
+    }
+    #endif
 }
 
 /// Static technical grid behind the live trace. Canvas draws only when layout/style changes, so the
@@ -2238,9 +2375,11 @@ extension LiquidTodayView {
         case offline
         /// Linked, but no charge reading has landed yet. `charging` is still knowable on its own.
         case pending(charging: Bool)
-        /// A reading from the current link.
-        case charge(pct: Double, charging: Bool)
-        /// The strap is not the active device, so this control has nothing to say and is not drawn.
+        /// A reading from the current link. `isRing` says whose: the ring's own charge under an active
+        /// ring, the strap's under an active strap — the label names the device the number belongs to.
+        case charge(pct: Double, charging: Bool, isRing: Bool)
+        /// The active device is neither the strap nor a ring that has reported its charge this link, so
+        /// this control has nothing to say and is not drawn.
         ///
         /// Distinct from [offline], which asserts a strap that IS active is not connected. Collapsing the
         /// two put a crossed-out bolt and "strap not connected" on the header of a wearer whose ring was
@@ -2251,16 +2390,26 @@ extension LiquidTodayView {
         /// #2208: `activeIsWhoop` is required, not defaulted. `connected` alone was never enough: it is
         /// true the moment ANY source streams, `batteryPct` is the strap's and is never cleared, so under
         /// an active ring both halves of the old gate passed and this drew the strap's charge. Charging
-        /// is strap-only for the same reason, so a non-WHOOP active device reports neither.
+        /// is strap-only for the same reason, so a non-WHOOP active device reports neither of the strap's.
         ///
-        /// No default value on purpose. A defaulted flag is one a future call site can forget, and
+        /// A ring reports its OWN charge into `ringPct` (`LiveState.ouraBatteryPct`), cleared with the
+        /// link, so under a non-WHOOP active device a non-nil `ringPct` is a reading from the ring that is
+        /// live right now and is drawn as such; nil (no ring, or none has reported yet) keeps the control
+        /// off the header. `ringCharging` is the ring's charger state (`OuraWearState.charging`), the only
+        /// charging evidence a ring gives. Same resolution `LiveConsoleReadout.batteryPercent` applies.
+        ///
+        /// No default values on purpose. A defaulted flag is one a future call site can forget, and
         /// forgetting it reinstates exactly this bug in a form that still compiles.
         static func resolve(activeIsWhoop: Bool, connected: Bool,
-                            batteryPct: Double?, charging: Bool?) -> StrapBatteryDisplay {
-            guard activeIsWhoop else { return .notActiveDevice }
+                            batteryPct: Double?, charging: Bool?,
+                            ringPct: Int?, ringCharging: Bool) -> StrapBatteryDisplay {
+            guard activeIsWhoop else {
+                guard let ringPct else { return .notActiveDevice }
+                return .charge(pct: Double(ringPct), charging: ringCharging, isRing: true)
+            }
             guard connected else { return .offline }
             guard let pct = batteryPct else { return .pending(charging: charging == true) }
-            return .charge(pct: pct, charging: charging == true)
+            return .charge(pct: pct, charging: charging == true, isRing: false)
         }
     }
 
