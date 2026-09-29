@@ -244,8 +244,15 @@ struct DayActivitiesSection: View {
         var blocks = await repo.sleepSessions(from: from - 18 * 3600, to: to)
         if blocks.isEmpty { blocks = await repo.computedSleepSessions(from: from - 18 * 3600, to: to) }
         let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
-        let detected = await repo.detectedActivities(from: from, to: to, hr: hr)
-        let steps = detected.isEmpty ? [] : await repo.strapStepSamples(from: from, to: to)
+        let raw = await repo.detectedActivities(from: from, to: to, hr: hr)
+        let steps = raw.isEmpty ? [] : await repo.strapStepSamples(from: from, to: to)
+        var gravity: [GravitySample] = []
+        if let span = DayActivityMotionTrim.gravityReadSpan(raw) {
+            gravity = await repo.gravitySamplesUnion(from: span.lowerBound, to: span.upperBound)
+        }
+        // Cut each HR-only bout to where the strap moved; a dismissed piece stays hidden (its own token).
+        let detected = repo.withoutDismissedDetected(
+            DayActivityMotionTrim.split(raw, hr: hr, steps: steps, gravity: gravity))
         let mindful = await DayActivities.mindfulSessions?(from, to) ?? []
         let scoring = DayActivities.Scoring(
             maxHR: profile.age > 0 ? StrainScorer.tanakaHRmax(age: Double(profile.age)) : nil,

@@ -90,12 +90,17 @@ enum DayActivities {
 
     /// The samples with `from <= ts <= to` from a time-ordered stream, by binary search.
     static func hrSlice(_ hr: [HRSample], from: Int, to: Int) -> [HRSample] {
+        slice(hr, from: from, to: to, ts: \.ts)
+    }
+
+    /// The elements with `from <= ts <= to` from any time-ordered stream, by binary search.
+    static func slice<T>(_ xs: [T], from: Int, to: Int, ts: KeyPath<T, Int>) -> [T] {
         guard to >= from else { return [] }
-        var lo = 0, hi = hr.count
-        while lo < hi { let mid = (lo + hi) / 2; if hr[mid].ts < from { lo = mid + 1 } else { hi = mid } }
+        var lo = 0, hi = xs.count
+        while lo < hi { let mid = (lo + hi) / 2; if xs[mid][keyPath: ts] < from { lo = mid + 1 } else { hi = mid } }
         var end = lo
-        while end < hr.count, hr[end].ts <= to { end += 1 }
-        return Array(hr[lo..<end])
+        while end < xs.count, xs[end][keyPath: ts] <= to { end += 1 }
+        return Array(xs[lo..<end])
     }
 
     /// The sleep blocks that belong to a day window: every block that ENDS inside (from, to]. The main night
