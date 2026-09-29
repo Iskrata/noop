@@ -203,10 +203,10 @@ public enum SleepStagerV2 {
         /// `SleepStager.detectSleep` with V2) rather than night against night. These offsets give deep 19.6
         /// / REM 28.6 / light 51.8, with deep at 97 ± 14 min a night against WHOOP's 95 ± 19.
         ///
-        /// The fit was made against a deep base prior of 0.18. Upstream lowered that prior to 0.15 (PSG
-        /// evidence, 2026-09-28); the `log(0.18 / 0.15)` term hands the difference back, so this wearer's
-        /// deep emission, and the stages written to Apple Health, stay where the fit put them.
-        public static let personal = Calibration(deepLogBias: -0.60 + log(0.18 / 0.15), remLogBias: -0.30)
+        /// The fit was made against a deep base prior of 0.18. Upstream lowered that prior to 0.15 on PSG
+        /// evidence (2026-09-28); the owner chose to take that change on top of this fit (2026-09-29), so deep
+        /// now reads somewhat below the WHOOP share above until the fit is redone against the new prior.
+        public static let personal = Calibration(deepLogBias: -0.60, remLogBias: -0.30)
     }
     static let deepGateSlope = 5.0
 
