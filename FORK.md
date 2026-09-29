@@ -27,15 +27,26 @@ stages, HRV, resting HR, heartbeat series). Charge/Effort/Rest themselves are no
   Package tests: `swift test` inside `Packages/<Pkg>`.
 - Parity tools need Python 3.12 (`~/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12`).
 - Reading the phone's state: `xcrun devicectl device copy from --device <id> --domain-type appDataContainer
-  --domain-identifier com.iskren.noop --source "Library/Preferences/com.iskren.noop.plist" --destination <file>`
-  (the strap log is under `strapLog.tail`); the DB is `Library/Application Support/OpenWhoop/whoop.sqlite`.
+  --domain-identifier com.iskren.noop --source "Library/Preferences/com.iskren.noop.plist" --destination <file>`.
+  The DB is `Library/Application Support/OpenWhoop/whoop.sqlite` (copy the `-wal`/`-shm` files too). The strap
+  log is on disk since upstream's `StrapLogArchive` (2026-09-22): `Library/Application Support/OpenWhoop/strap-log/`,
+  one `<run start ms>-<segment>.log` per 256 KB segment, oldest deleted past 2 MB, plus `legacy.log` (the old
+  UserDefaults ring, carried over once). List them with `xcrun devicectl device info files --device <id>
+  --domain-type appDataContainer --domain-identifier com.iskren.noop`.
 
 ## Fork customizations (on `main`)
 - WHOOP calibration: `SleepStagerV2.Calibration.personal`, `StrainScorer.Method.whoopCalibrated`,
   `RecoveryScorer` wRHR 0.05 / K 1.34 / Z0 −0.61, and unlabelled legacy WHOOP 5 R-R is scored
-  (`WhoopStore.scoresUnlabelledWhoop5Legacy`).
+  (`WhoopStore.scoresUnlabelledWhoop5Legacy`). The personal sleep calibration sits on upstream's 0.15 deep prior
+  (owner's choice, 2026-09-29; the fit was made against 0.18, so deep reads a little under WHOOP's share).
+- Resting HR = the primary night's deep-sleep mean (a session's `restingHR`), not upstream's lowest 5-min bin
+  (#2522) nor the whole-night mean. Owner's choice 2026-09-29, on 37 nights: deep mean 54.6 / night-to-night
+  change sd 5.3, whole-night 58.3 / 4.0, lowest bin 49.2, against the WHOOP app's 56.3 / 4.9 (Jun–Aug, no
+  overlapping nights). WHOOP 4.0 uses a sleep average weighted toward the last slow-wave stage and read 1.4 bpm
+  under an all-night ECG mean (PMC12367097).
 - UI: WHOOP black palette (`NoopVisualStyle`), day-cycle sky off, hide-scores switch, Today Activities list
-  (`DayActivities*`), Sleep Consistency pinned with a 7-night bedtime/wake sheet, Effort target band, tabs
+  (`DayActivities*`; AUTO bouts trimmed/split to minutes the strap saw steps or wrist motion,
+  `DayActivityMotionTrim`), Sleep Consistency pinned with a 7-night bedtime/wake sheet, Effort target band, tabs
   Today · Zones · Trends · Lab · More (Coach is the top row of More), Start-session row off.
 - Lab tab (`StrandiOS/Biology/`, titled "Lab"): bloodwork from the Lab Book store grouped by body system, report-range
   bars and history chart; "Scan lab report" OCRs photos/PDF pages on device, blanks personal lines (user can
@@ -48,7 +59,8 @@ stages, HRV, resting HR, heartbeat series). Charge/Effort/Rest themselves are no
   2015) and breathing-disturbance (`CvhrDetector`, Hayano ACAT) screens over the strap's R-R, run after each re-score
   pass, stored in metricSeries. The banner shows only a repeating pattern; no notification, no strap buzz, nothing
   written to Apple Health. Validation: `docs/fork/HEART_BREATHING.md`.
-- Stale-sync notification, heartbeat export toggle, MetricKit exit-reason logging.
+- Stale-sync notification, heartbeat export toggle, MetricKit exit-reason logging (`ExitReasonMetrics`, beside
+  upstream's `MetricKitLog`, so exit counts can appear twice in the strap log).
 
 ## Working rules from the owner
 - Don't start the WHOOP app or pair anything. Don't use the Fable model for subagents.
