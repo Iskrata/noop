@@ -45,11 +45,13 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.lazy.rememberLazyListState
+import kotlinx.coroutines.ensureActive
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import com.noop.data.DailyMetric
 import com.noop.data.HrBucket
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -234,6 +236,9 @@ fun SleepScreen(
     // mergeSleep but WITHOUT the per-night collapse). Keyed on `days` so a sync/import (which always
     // rewrites dailyMetric too) reloads; these reads have no Flow. (#160, #170)
     var sleeps by remember { mutableStateOf<List<SleepSession>>(emptyList()) }
+    var loadedSleepDays by remember { mutableStateOf<List<DailyMetric>?>(null) }
+    var loadedSleepStrap by remember { mutableStateOf<String?>(null) }
+    val sleepRowsReady = loadedSleepDays == days && loadedSleepStrap == vm.activeStrapId
     // Durable deleted-night markers. Unlike the 7-second Undo banner these remain reachable after the
     // session row is gone, giving each suppressed window a "Recompute this night" escape hatch (#515).
     var dismissedSleeps by remember { mutableStateOf<List<DismissedSleep>>(emptyList()) }
@@ -243,8 +248,10 @@ fun SleepScreen(
     // `sleeps` in place WITHOUT touching `days`, so it must not reset the browse — keeping the
     // user on the night they just edited. (#160)
     var nightOffset by remember { mutableIntStateOf(0) }
-    LaunchedEffect(days) {
-        sleeps = runCatching {
+    LaunchedEffect(days, vm.activeStrapId) {
+        loadedSleepDays = null
+        val strap = vm.activeStrapId
+        val loaded = runCatching {
             val now = System.currentTimeMillis() / 1000L
             // Read the ACTIVE-strap ∪ canonical "my-whoop" union (#814/#1008), not the canonical id
             // alone: after a strap remove+re-add live nights land under the fresh "whoop-<uuid>" id, so
@@ -252,8 +259,8 @@ fun SleepScreen(
             // union-joined surface moved on (the #1014/#1009 stuck-sleep divergence, in the OTHER
             // direction). Exact-duplicate (startTs, endTs) blocks recorded under both ids are dropped;
             // naps/split blocks survive. Single-device installs collapse to one id, byte-identical.
-            val imported = vm.repo.sleepSessionsUnion(vm.activeStrapId, 0L, now)
-            val computed = vm.repo.computedSleepSessionsUnion(vm.activeStrapId, 0L, now)
+            val imported = vm.repo.sleepSessionsUnion(strap, 0L, now)
+            val computed = vm.repo.computedSleepSessionsUnion(strap, 0L, now)
             // Key by the LOCAL wake-day (#304), matching WhoopRepository.mergeSleep — a UTC key
             // mis-attributed a UTC+ user's early-morning wake to yesterday. REUSE the existing
             // dayString(ts, offsetSec) overload; do not add a new one (it clashes on the JVM).
@@ -268,7 +275,11 @@ fun SleepScreen(
             WhoopRepository.mergeSleepRichness(imported, computed) { localEndDay(it.endTs) }
                 .sortedBy { it.effectiveStartTs }
         }.getOrDefault(emptyList())
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        sleeps = loaded
         nightOffset = 0
+        loadedSleepDays = days
+        loadedSleepStrap = strap
     }
 
     // Read the active∪canonical management union so a marker created before a strap re-add remains
@@ -531,6 +542,29 @@ fun SleepScreen(
     }
     val display = remember(model, night) { heroDisplay(model, night) }
 
+    val resultSnapshot = if (night != null && display != null) SleepResultSnapshot(
+        scope = "${vm.activeStrapId}:${(night.heroGroup.ifEmpty { listOf(night.session) }).map { it.deviceId }.distinct().sorted().joinToString(",")}:${night.dayKey}",
+        onset = night.heroOnsetTs ?: night.session.effectiveStartTs,
+        wake = night.heroWakeTs ?: night.session.endTs,
+        asleepMinutes = display.stages.asleep,
+        edited = night.session.userEdited || night.heroGroup.any { it.userEdited },
+    ) else null
+    val changeTracker = remember(vm.activeStrapId, nightOffset, resultSnapshot?.scope) { SleepResultChangeTracker() }
+    var resultChanged by remember(vm.activeStrapId, nightOffset, resultSnapshot?.scope) { mutableStateOf(false) }
+    var resultRevision by remember(vm.activeStrapId, nightOffset, resultSnapshot?.scope) { mutableIntStateOf(0) }
+    LaunchedEffect(resultSnapshot, sleepRowsReady, freshnessLive.analyzing, changeTracker) {
+        if (changeTracker.observe(resultSnapshot, sleepRowsReady && !freshnessLive.analyzing)) {
+            resultChanged = true
+            resultRevision++
+        }
+    }
+    LaunchedEffect(resultRevision, changeTracker) {
+        if (resultChanged) {
+            kotlinx.coroutines.delay(8_000)
+            resultChanged = false
+        }
+    }
+
     val sleepFreshness = remember(sleeps, freshnessLive) {
         val zone = ZoneId.systemDefault()
         val now = Instant.now().atZone(zone)
@@ -648,6 +682,14 @@ fun SleepScreen(
                             ).show()
                         }
                     },
+                )
+            }
+        }
+        if (resultChanged) {
+            item {
+                DataPendingNote(
+                    title = stringResource(R.string.sleep_result_updated_title),
+                    body = stringResource(R.string.sleep_result_updated_message),
                 )
             }
         }

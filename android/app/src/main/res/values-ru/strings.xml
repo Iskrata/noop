@@ -2740,4 +2740,6 @@
     <string name="fused_record_contribution_in_use">%1$s, %2$s, используется</string>
     <string name="smart_alarm_5mg_armed_experimental">Будильник установлен на браслете экспериментальной командой 5/MG. Сообщалось о срабатывании на 5.0 и MG, но оно не гарантировано. Оставьте резервный будильник для важных событий.</string>
     <string name="raw_diag_protocol_probes_detail">Отправляет экспериментальные запросы протокола и включает будильник браслета 5/MG. Не требуется для обычной синхронизации, сна, восстановления или подсчёта шагов.</string>
+    <string name="sleep_result_updated_title">Результат сна обновлён</string>
+    <string name="sleep_result_updated_message">Время засыпания, пробуждения или общая продолжительность сна этой ночи изменились как минимум на пять минут.</string>
 </resources>

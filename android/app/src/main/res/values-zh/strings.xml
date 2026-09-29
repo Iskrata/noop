@@ -2815,4 +2815,6 @@
     <string name="fused_record_contribution_in_use">%1$s，%2$s，使用中</string>
     <string name="smart_alarm_5mg_armed_experimental">已通过实验性 5/MG 命令在手环上设置闹钟。有用户报告 5.0 和 MG 手环能够唤醒，但不保证每次生效。重要事项请保留备用闹钟。</string>
     <string name="raw_diag_protocol_probes_detail">发送实验性协议查询并启用 5/MG 手环闹钟。正常同步、睡眠、恢复和步数功能不需要开启。</string>
+    <string name="sleep_result_updated_title">睡眠结果已更新</string>
+    <string name="sleep_result_updated_message">这晚的入睡时间、醒来时间或总睡眠时长变化了至少五分钟。</string>
 </resources>

@@ -5709,13 +5709,13 @@ private fun ContributorBar(label: String, readout: String, fraction: Double?, co
 // "No bare number without a STATE, a REASON, and a NEXT STEP." Every uncertain or derived read-out on
 // Today gets a clear state, a plain-English reason and a next step, and we NEVER fabricate a number:
 // calibrating / needs-strap show NO value, carried values are always stamped with their date, and the
-// provenance badge reflects the REAL per-day merge winner. The copy here is VERBATIM and must match the
-// Swift today lane word-for-word (ScoreState / RecordingState). No em-dashes anywhere.
+// provenance badge reflects the REAL per-day merge winner. The score-state copy here is VERBATIM and
+// must match the Swift Today lane word-for-word. No em-dashes anywhere.
 // ════════════════════════════════════════════════════════════════════════════════════════════════════
 
 // ── COMPONENT 2, explained score states ─────────────────────────────────────────────────────────────
 
-/** The score-state title, LOCALIZED — same split as [recordingTitle] and for the same reason:
+/** The score-state title, LOCALIZED:
  *  [ScoreState.title] is the English parity contract asserted verbatim against Swift in
  *  `TodayExplainabilityTest`, so the resource lookup lives here rather than in the pure mapper. */
 @Composable
@@ -5830,87 +5830,6 @@ private fun ChargeLegacyRrGapNote() {
                 Text(detail, style = NoopType.subhead, color = Palette.textSecondary)
             }
         }
-    }
-}
-
-// ── COMPONENT 3, recording status ───────────────────────────────────────────────────────────────────
-
-/** The chip's status word, LOCALIZED.
- *
- *  [RecordingState.title] stays the English parity contract — it is asserted verbatim against the Swift
- *  twin in `TodayExplainabilityTest` and must not become resource-backed, which would drag a `Context`
- *  into a pure mapper and break those tests. So the resource lookup lives HERE, at the render site,
- *  exactly like the Swift side: `RecordingState.label` is a `LocalizedStringKey`, so its literals are
- *  catalogue KEYS that SwiftUI resolves. Kotlin's are plain `String`, so rendering `state.title`
- *  directly shipped English to every locale — the chip read "Not recording. Strap not connected."
- *  on a German phone while the iPhone read "Strap nicht verbunden. Tippe zum Verbinden."
- *
- *  Invisible to `i18n_audit`: the literals sit in a sealed-class getter, not a Compose call argument,
- *  so the scanner never saw them. Translations here are the Swift catalogue's own, copied 1:1.
- */
-@Composable
-private fun recordingTitle(state: RecordingState): String = when (state) {
-    RecordingState.Recording -> uiString(state.titleRes)
-    is RecordingState.LastSynced -> uiString(state.titleRes, state.minutesAgo)
-    RecordingState.NotRecording -> uiString(state.titleRes)
-    // Both connected states share the same word, as they do on Swift.
-    RecordingState.HistoryExperimental, RecordingState.ConnectedNoData ->
-        uiString(state.titleRes)
-}
-
-/** The chip's one-line detail, LOCALIZED. Same split as [recordingTitle]. */
-@Composable
-private fun recordingDetail(state: RecordingState): String = when (state) {
-    RecordingState.Recording -> uiString(state.detailRes)
-    is RecordingState.LastSynced -> uiString(state.detailRes)
-    RecordingState.NotRecording -> uiString(state.detailRes)
-    RecordingState.HistoryExperimental -> uiString(state.detailRes)
-    RecordingState.ConnectedNoData -> uiString(state.detailRes)
-}
-
-/** The Today/Live recording chip: a tinted StatePill with the status word (a pulsing dot while live),
- *  plus the one-line what-it-means below. Honest, never claims "Recording" without a live stream.
- *  Tapping a not-recording chip routes to connect (Settings). Mirrors the iOS RecordingStatusChip. */
-@Composable
-private fun RecordingStatusChip(state: RecordingState, onConnect: () -> Unit) {
-    val clickable = state is RecordingState.NotRecording || state is RecordingState.LastSynced
-    // Resolved BEFORE the Row: `semantics { }` is not a composable scope, so uiString cannot be called
-    // inside it. Reading them once also keeps the pill, the detail line and the a11y label on one string.
-    val title = recordingTitle(state)
-    val detail = recordingDetail(state)
-    val chipA11y = uiString(R.string.l10n_today_screen_state_title_state_detail_f5380609, title, detail)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(
-                if (clickable) {
-                    Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onConnect,
-                    )
-                } else {
-                    Modifier
-                },
-            )
-            .semantics { contentDescription = chipA11y },
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        StatePill(
-            title = title,
-            tone = state.tone,
-            showsDot = true,
-            pulsing = state is RecordingState.Recording,
-        )
-        Text(
-            detail,
-            style = NoopType.footnote,
-            color = Palette.textTertiary,
-            modifier = Modifier.weight(1f),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 

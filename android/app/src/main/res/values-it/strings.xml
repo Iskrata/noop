@@ -2813,4 +2813,6 @@
     <string name="fused_record_contribution_in_use">%1$s, %2$s, in uso</string>
     <string name="smart_alarm_5mg_armed_experimental">La sveglia è stata attivata sulla fascia con un comando sperimentale 5/MG. Sono stati segnalati risvegli dalla fascia su 5.0 e MG, ma non sono garantiti. Tieni una sveglia di riserva per gli impegni importanti.</string>
     <string name="raw_diag_protocol_probes_detail">Invia richieste di protocollo sperimentali e abilita la sveglia della fascia 5/MG. Non serve per la normale sincronizzazione, il sonno, il recupero o i passi.</string>
+    <string name="sleep_result_updated_title">Risultato del sonno aggiornato</string>
+    <string name="sleep_result_updated_message">Gli orari del sonno o il tempo totale dormito di questa notte sono cambiati di almeno cinque minuti.</string>
 </resources>

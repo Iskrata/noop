@@ -2874,4 +2874,6 @@
     <string name="fused_record_contribution_in_use">%1$s, %2$s, in use</string>
     <string name="smart_alarm_5mg_armed_experimental">Armed on the strap with an experimental 5/MG command. Strap-driven wakes have been reported on 5.0 and MG, but are not guaranteed. Keep a backup alarm for anything you cannot miss.</string>
     <string name="raw_diag_protocol_probes_detail">Sends experimental protocol queries and enables the 5/MG strap alarm. Not needed for normal sync, sleep, recovery, or steps.</string>
+    <string name="sleep_result_updated_title">Sleep result updated</string>
+    <string name="sleep_result_updated_message">This night\'s sleep times or total asleep changed by at least five minutes.</string>
 </resources>

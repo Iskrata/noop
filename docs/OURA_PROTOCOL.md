@@ -873,9 +873,10 @@ arrive as a BURST of `0x4E`/`0x5A` (and `0x4B`) records finalized after wake —
 envelope ring-times (the WRITE moment, seconds apart), so arrival order is the code sequence, not a
 sortable time. NOOP:
 1. **Groups** consecutive phase records into one burst (envelope-gap grouping).
-2. **Reconstructs the time axis** by laying the codes BACKWARD from the burst end at the 30 s SleepNet
-   epoch: code *j* of *N* gets `ts = end − (N − j)·30 s` (each ts marks the start of its 30 s interval,
-   the last interval ending exactly at the burst end).
+2. **Reconstructs the time axis** by discarding trailing unwritten (`0xFF`) pad, then laying the
+   remaining codes BACKWARD from the burst end at the 30 s SleepNet epoch: code *j* of *N* gets
+   `ts = end − (N − j)·30 s` (each ts marks the start of its 30 s interval, the last written interval
+   ending exactly at the burst end). Unwritten runs between real codes keep their time slots as gaps.
 3. **Refines BOTH ends with the paired `0x49` window** (closest envelope ring-time within 10 min): the
    END anchors to `event − end_offset·60 s` (the true sleep-end, ahead of the write moment) and the
    START clamps to `event − start_offset·60 s` (the onset), clipping the few pre-window codes. Both use

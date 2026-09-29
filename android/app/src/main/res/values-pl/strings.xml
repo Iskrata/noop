@@ -2861,4 +2861,6 @@
     <string name="fused_record_contribution_in_use">%1$s, %2$s, w użyciu</string>
     <string name="smart_alarm_5mg_armed_experimental">Alarm uzbrojono na opasce eksperymentalnym poleceniem 5/MG. Zgłaszano wybudzanie przez opaski 5.0 i MG, ale nie jest ono gwarantowane. Zachowaj alarm zapasowy na ważne okazje.</string>
     <string name="raw_diag_protocol_probes_detail">Wysyła eksperymentalne zapytania protokołu i włącza alarm opaski 5/MG. Nie jest potrzebne do zwykłej synchronizacji, snu, regeneracji ani kroków.</string>
+    <string name="sleep_result_updated_title">Zaktualizowano wynik snu</string>
+    <string name="sleep_result_updated_message">Godziny snu lub łączny czas snu tej nocy zmieniły się o co najmniej pięć minut.</string>
 </resources>

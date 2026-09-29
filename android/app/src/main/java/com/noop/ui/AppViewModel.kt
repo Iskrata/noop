@@ -14,6 +14,7 @@ import com.noop.ingest.WhoopCsvImporter
 import com.noop.analytics.IllnessSignalEngine
 import com.noop.analytics.IllnessWatch
 import com.noop.analytics.IntelligenceEngine
+import com.noop.analytics.IntelligencePersistence
 import com.noop.analytics.DayCycleIntelligenceIntegration
 import com.noop.analytics.CircadianEngine
 import com.noop.analytics.V5HealthSignals
@@ -1155,20 +1156,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     flagSet = { NoopPrefs.setSkinTempRepairDone(appContext) },
                 )
             }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
-            // One-shot on-upgrade Effort rescore (#313): recompute strain from source across the FULL
-            // history once, so any deep-history rows an older build left on the 0–21 axis regenerate on
-            // the 0–100 axis. Guarded by a persisted flag, so it's a no-op on every subsequent launch.
+            // One-shot shared Effort and sleep-wear repair: recompute strain from source across the FULL
+            // history and replay pre-fix sleep once. Either pending flag triggers one pass; both flags
+            // are set only after persistence returns. Cached-only days are preserved, changing Effort's
+            // old broad-window write behavior. Cancellation/failure retries next launch.
             runCatching {
                 IntelligenceEngine.runEffortRescoreIfNeeded(
                     repo = repository,
                     profile = currentProfile(),
                     importedDeviceId = deviceId,
                     maxHROverride = profileStore.hrMaxOverride.takeIf { it > 0 }?.toDouble(),
-                    flagGet = { NoopPrefs.effortRescoreDone(appContext) },
-                    flagSet = { NoopPrefs.setEffortRescoreDone(appContext) },
+                    flagGet = {
+                        !IntelligencePersistence.historyRepairIsPending(
+                            effortDone = NoopPrefs.effortRescoreDone(appContext),
+                            sleepWearDone = NoopPrefs.sleepWearRescoreDone(appContext),
+                        )
+                    },
+                    flagSet = {
+                        NoopPrefs.setEffortRescoreDone(appContext)
+                        NoopPrefs.setSleepWearRescoreDone(appContext)
+                    },
                     // #1567: this rewrites the FULL history once, so a missing owner source would bake the
                     // WHOOP5 skin-temp scale into every day of it.
                     ownerSource = RegistryDayOwnerSource(noopApp.deviceRegistry),
+                    preserveUnscoredHistory = true,
                 )
             }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
             // One-shot resting-HR rescore: every computed night's resting HR moved from the lowest 5-min bin to

@@ -2837,4 +2837,6 @@
     <string name="fused_record_contribution_in_use">%1$s, %2$s, em uso</string>
     <string name="smart_alarm_5mg_armed_experimental">O alarme foi armado na pulseira com um comando experimental 5/MG. Foram comunicados despertares pela pulseira em 5.0 e MG, mas não são garantidos. Mantém um alarme de reserva para tudo o que não podes perder.</string>
     <string name="raw_diag_protocol_probes_detail">Envia consultas experimentais de protocolo e ativa o alarme da pulseira 5/MG. Não é necessário para a sincronização, o sono, a recuperação ou os passos normais.</string>
+    <string name="sleep_result_updated_title">Resultado do sono atualizado</string>
+    <string name="sleep_result_updated_message">Os horários de sono ou o tempo total de sono desta noite mudaram pelo menos cinco minutos.</string>
 </resources>
