@@ -3267,9 +3267,15 @@ final class Repository: ObservableObject {
     /// strap saw, the way WHOOP lists auto-detected activities under the day's scores.
     /// `hr` is the caller's own read of the same window, so the list and its Effort share one DB read.
     func detectedActivities(from: Int, to: Int, hr: [HRSample]) async -> [DetectedWorkout] {
-        let candidates = await detectWorkoutBouts(from: from, to: to, traced: false, samples: hr)
-        return Self.undismissedAutoDetectCandidates(
-            candidates,
+        withoutDismissedDetected(await detectWorkoutBouts(from: from, to: to, traced: false, samples: hr))
+    }
+
+    /// Fork (Today Activities): `bouts` minus every dismissed span, oldest first. Also applied to the
+    /// motion-trimmed pieces (`DayActivityMotionTrim`), whose own "start:end" token is what dismissing a
+    /// piece records, so one piece can be hidden without its siblings.
+    func withoutDismissedDetected(_ bouts: [DetectedWorkout]) -> [DetectedWorkout] {
+        Self.undismissedAutoDetectCandidates(
+            bouts,
             autoDismissedTokens: autoDetectDismissedSpans,
             detectedDismissedTokens: dismissedDetectedSpans)
             .sorted { $0.startSec < $1.startSec }
