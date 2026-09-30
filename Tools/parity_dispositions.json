@@ -392,6 +392,15 @@
       "identity_sha256": "6cb9a3a0755edb5e1621625ad35ea8c20de9b9542c1c746743915b0b77f1bcb1",
       "platform": "kotlin",
       "rationale": "Health Connect export window only; the iOS side of the same one-time rewrite lives in StrandiOS/Health/HealthKitBridge.swift (rewriteRestingHR), outside the governed roots."
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopRepository.kt::importedDailyUnionFlow/3#1",
+      "identity_sha256": "a1b8ac6c0842e6925e91e66bfb292e599945dff1dcb8e5eb3080e17951c16e21",
+      "platform": "kotlin",
+      "rationale": "Swift Repository.refresh reads the same imported daily union (unionDailyMetrics) in the excluded app layer and hands it, still apart from the computed union, to ChargeBaselines.resolve (#2525); this disposition does not assert behavioral parity.",
+      "twin_path": "Strand/Data/Repository.swift"
     }
   ]
 }
