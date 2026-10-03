@@ -834,12 +834,11 @@ final class IntelligenceEngine: ObservableObject {
             if passDidWork { onPassFinished?() }
             if pendingForcedRescore {
                 pendingForcedRescore = false
-                // Preserve the current pass's scope and persistence callback on the re-pass.
-                Task {
-                    await self.analyzeRecent(maxDays: maxDays, force: true,
-                                             preserveUnscoredHistory: preserveUnscoredHistory,
-                                             onPersisted: onPersisted)
-                }
+                // Carry THIS pass's window into the re-pass: a heal firing during a wide one-shot pass
+                // must re-score the same width, not the default 21 days. (Upstream also carries
+                // `preserveUnscoredHistory` / `onPersisted` here; this fork's `analyzeRecent` has
+                // neither parameter.)
+                Task { await self.analyzeRecent(maxDays: maxDays, force: true) }
             }
         }
         guard let store = await repo.storeHandle() else { note = String(localized: "No on-device store yet."); return }
