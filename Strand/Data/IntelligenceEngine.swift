@@ -657,7 +657,8 @@ final class IntelligenceEngine: ObservableObject {
         return !rows.isEmpty
     }
 
-    /// Completion flag for the shared full-history Effort and sleep-wear repair pass.
+    /// UserDefaults flag guarding the one-shot #313 full-history Effort rescore (below). Set once the
+    /// pass completes so it never re-runs.
     static let effortRescoreFlagKey = "intelligence.effortRescore.v313.done"
 
     /// UserDefaults flag guarding the one-shot full-history rescore that moved every computed night's resting
@@ -698,38 +699,10 @@ final class IntelligenceEngine: ObservableObject {
     /// `analyzeRecent` once with the `maxDays` cap lifted to the full history, then persist a flag so it
     /// runs exactly once. IMPORTED rows are never rewritten here (the engine only ever writes under the
     /// "-noop" computed source) , those are handled by re-import. A day already on 0–100 is recomputed
-    /// from the same raw HR and lands on 0–100 again: UNCHANGED axis (verified by test). The default flag now
-    /// shares a pass with upstream's sleep-wear repair (`runHistoryRepairIfNeeded`); cached-only days are
-    /// preserved in every full-history pass.
+    /// from the same raw HR and lands on 0–100 again: UNCHANGED axis (verified by test).
     ///
-    /// Fork: `flagKey` lets another one-shot full-history recompute reuse this pass (`restingHRRescoreFlagKey`,
-    /// `whoopCalibrationRescoreFlagKey`, …). Returns whether this call ran the pass to completion.
-    @discardableResult
-    func runEffortRescoreIfNeeded(historyDays: Int = 4000, flagKey: String = effortRescoreFlagKey) async -> Bool {
-        if flagKey == Self.effortRescoreFlagKey { return await runHistoryRepairIfNeeded(historyDays: historyDays) }
-        guard !UserDefaults.standard.bool(forKey: flagKey) else { return false }
-        // Wait out a pass that already holds the lock rather than give up until the next launch. This runs
-        // at launch, which is exactly when a strap reconnect starts a post-offload pass, and a busy install
-        // re-arms those back to back: a field log showed the resting-HR rescore still unrun a day after
-        // install, having lost the race on every launch in between.
-        while !Task.isCancelled {
-            while computing && !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-            }
-            let passesBefore = completedPasses
-            await analyzeRecent(maxDays: historyDays, triggerLabel: "fork-history-rescore",
-                                preserveUnscoredHistory: true)
-            // Another trigger can still take the lock between the wait and the call, and then this call
-            // returns without scoring anything. Only a pass at least this wide finishing proves the work was
-            // done (a pass whose persistence fails returns before it counts as completed).
-            if completedPasses > passesBefore, lastCompletedPassDays >= historyDays {
-                UserDefaults.standard.set(true, forKey: flagKey)
-                return true
-            }
-        }
-        return false
-    }
-
+    /// `flagKey` lets another one-shot full-history recompute reuse this pass (`restingHRRescoreFlagKey`).
+    /// Returns whether this call ran the pass to completion.
     /// Days back to the first night this engine computed, plus a margin (fork). A full-history one-shot
     /// only needs to reach that far: before it there is no raw data to re-score, and walking 4000 days of
     /// empty windows kept a backgrounded one-shot holding the lock overnight. Falls back to 4000 when the
@@ -746,45 +719,28 @@ final class IntelligenceEngine: ObservableObject {
         return min(4000, max(21, days + 3))
     }
 
-    /// Upgrade repair for nights rejected by an unmatched WRIST_OFF, including history older than
-    /// the normal 21-day window. Reuses the full-history scoring path, including edited/dismissed
-    /// sleep protection and dependent daily metrics. Both flags describe this shared pass: either
-    /// pending flag triggers one run, and both are set only after every required write succeeds.
-    /// Cached-only days are preserved, changing the old Effort-only repair from broad-window writes to
-    /// writes only for days that were recomputed.
-    static let sleepWearRescoreFlagKey = "intelligence.sleepWearRescore.v1.done"
-    private var sleepWearRescoreRunning = false
-
-    static func historyRepairIsPending(effortDone: Bool, sleepWearDone: Bool) -> Bool {
-        !effortDone || !sleepWearDone
-    }
-
-    func runSleepWearRescoreIfNeeded(historyDays: Int = 4000) async {
-        await runHistoryRepairIfNeeded(historyDays: historyDays)
-    }
-
-    /// Returns whether this call's pass persisted (fork: the Bool feeds `runEffortRescoreIfNeeded`).
     @discardableResult
-    private func runHistoryRepairIfNeeded(historyDays: Int) async -> Bool {
-        guard Self.historyRepairIsPending(
-                  effortDone: UserDefaults.standard.bool(forKey: Self.effortRescoreFlagKey),
-                  sleepWearDone: UserDefaults.standard.bool(forKey: Self.sleepWearRescoreFlagKey)),
-              !sleepWearRescoreRunning, !computing, !Task.isCancelled,
-              !RescoreBackgroundScheduler.isBackgrounded else { return false }
-        // Launch and scene activation can overlap while the store handle is being awaited.
-        sleepWearRescoreRunning = true
-        defer { sleepWearRescoreRunning = false }
-        var persisted = false
-        await analyzeRecent(maxDays: historyDays, triggerLabel: "sleep-wear-history-repair",
-                            preserveUnscoredHistory: true) {
-            UserDefaults.standard.set(true, forKey: Self.effortRescoreFlagKey)
-            UserDefaults.standard.set(true, forKey: Self.sleepWearRescoreFlagKey)
-            // Fork: nights this repair recovers can be older than the Apple Health write-back's rolling
-            // window, so have the write-back reach back to the first computed night once.
-            UserDefaults.standard.set(true, forKey: Self.healthHistoryRewriteOwedKey)
-            persisted = true
+    func runEffortRescoreIfNeeded(historyDays: Int = 4000, flagKey: String = effortRescoreFlagKey) async -> Bool {
+        guard !UserDefaults.standard.bool(forKey: flagKey) else { return false }
+        // Wait out a pass that already holds the lock rather than give up until the next launch. This runs
+        // at launch, which is exactly when a strap reconnect starts a post-offload pass, and a busy install
+        // re-arms those back to back: a field log showed the resting-HR rescore still unrun a day after
+        // install, having lost the race on every launch in between.
+        while !Task.isCancelled {
+            while computing && !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+            let passesBefore = completedPasses
+            await analyzeRecent(maxDays: historyDays)
+            // Another trigger can still take the lock between the wait and the call, and then this call
+            // returns without scoring anything. Only a pass at least this wide finishing proves the work
+            // was done.
+            if completedPasses > passesBefore, lastCompletedPassDays >= historyDays {
+                UserDefaults.standard.set(true, forKey: flagKey)
+                return true
+            }
         }
-        return persisted
+        return false
     }
 
     /// UserDefaults flag guarding the one-shot #547 implausible-timestamp DB heal (below). Set once the
@@ -846,8 +802,7 @@ final class IntelligenceEngine: ObservableObject {
     /// Personal baselines (HRV / resting HR) are folded from the imported history, so even the first
     /// live night can be scored against your norm.
     func analyzeRecent(maxDays: Int = 21, force: Bool = true, skipIfUnchanged: Bool = false,
-                       triggerLabel: String? = nil, preserveUnscoredHistory: Bool = false,
-                       onPersisted: (() -> Void)? = nil) async {
+                       triggerLabel: String? = nil) async {
         // #899-A: a concurrent pass already holds the lock. A NON-forced idle tick is safe to drop (the
         // in-flight pass already covers the same window). But a FORCED call is a real update path (a
         // post-backfill rescore after a sync) , dropping it would leave a freshly-synced night unscored
@@ -949,9 +904,9 @@ final class IntelligenceEngine: ObservableObject {
         runningPassDays = maxDays
         // #1538: the pass is now past every gate and will do real work. Mark it started durably, so that a
         // process killed mid-pass leaves evidence a LATER process can read — the killed process itself gets
-        // no chance to record anything. Cleared beside the watermark at the end; persistence failures
-        // also leave this mark outstanding so a later pass can retry. `RescoreBackgroundPolicy` stops
-        // re-attempting a pass that cannot
+        // no chance to record anything. Cleared beside the watermark at the end; there is no early return
+        // between here and there, so "started and never finished" means exactly "killed", never a silent
+        // internal skip. `RescoreBackgroundPolicy` reads it to stop re-attempting a pass that cannot
         // finish in the background, which is the livelock in #1538.
         // #1681: keep the token this debt was stamped with. At the end of the pass it is what tells our
         // own debt apart from one a LATER trigger recorded while we were running - the latter must
@@ -979,11 +934,7 @@ final class IntelligenceEngine: ObservableObject {
                 // Carry THIS pass's window into the re-pass: a heal firing during a wide one-shot pass
                 // must re-score the same width, not the default 21 days (Kotlin re-passes with the same
                 // maxDays; keep the platforms in lockstep).
-                Task {
-                    await self.analyzeRecent(maxDays: maxDays, force: true,
-                                             preserveUnscoredHistory: preserveUnscoredHistory,
-                                             onPersisted: onPersisted)
-                }
+                Task { await self.analyzeRecent(maxDays: maxDays, force: true) }
             }
         }
 
@@ -1454,7 +1405,7 @@ final class IntelligenceEngine: ObservableObject {
                 // short off-wrist tail survives. Pairing needs WRIST_ON too (to bound each interval); a span
                 // still open at the window end closes at `to`. Empty when the strap emitted no wrist events.
                 let wristEvents = (try? await store.events(deviceId: owner, from: from, to: to, limit: 50_000)) ?? []
-                let wristOff = AnalyticsEngine.offWristIntervals(events: wristEvents, windowEnd: to, hr: hr)
+                let wristOff = AnalyticsEngine.offWristIntervals(events: wristEvents, windowEnd: to)
 
                 // Calendar-day window for the ADDITIVE daily totals (steps + calories). The night window
                 // above is anchored to the current time-of-day and ends at dayStart+12h, so for a PAST
@@ -2680,34 +2631,17 @@ final class IntelligenceEngine: ObservableObject {
             }
             markerSources = sourceIds
         }
-        do {
-            // Repair only the days actually recomputed. A full-history repair must not erase
-            // older cached scores/provenance whose raw inputs are no longer retained.
-            let dailiesByDay = Dictionary(grouping: persistedDailies, by: \.day)
-            let restPointsByDay = Dictionary(grouping: restPoints, by: \.day)
-            let provenanceByDay = Dictionary(grouping: provenanceByCell.values, by: \.day)
-            let markerPointsByDay = Dictionary(grouping: markerPoints, by: { $0.point.day })
-            let windows = preserveUnscoredHistory
-                ? dailiesByDay.keys.sorted().map { ($0, $0) }
-                : [(oldestDay, newestDay)]
-            for (from, to) in windows {
-                try await store.persistComputedScores(
-                    dailyMetrics: preserveUnscoredHistory
-                        ? dailiesByDay[from, default: []] : persistedDailies,
-                    metricPoints: preserveUnscoredHistory
-                        ? restPointsByDay[from, default: []] : restPoints,
-                    provenance: preserveUnscoredHistory
-                        ? provenanceByDay[from, default: []] : Array(provenanceByCell.values),
-                    deviceId: computedId, from: from, to: to,
-                    replaceMetricKeys: markerKeys,
-                    additionalMetricPoints: preserveUnscoredHistory
-                        ? markerPointsByDay[from, default: []] : markerPoints,
-                    replaceMetricSourceIds: markerSources)
-            }
-        } catch {
-            diagnosticSink?("re-score: daily persistence failed; history repair remains pending", nil)
-            return
-        }
+        try? await store.persistComputedScores(
+            dailyMetrics: persistedDailies,
+            metricPoints: restPoints,
+            provenance: Array(provenanceByCell.values),
+            deviceId: computedId,
+            from: oldestDay,
+            to: newestDay,
+            replaceMetricKeys: markerKeys,
+            additionalMetricPoints: markerPoints,
+            replaceMetricSourceIds: markerSources
+        )
 
         // Now evict only the STALE computed rows in the window , those a prior (e.g. UTC-keyed) run left
         // behind that the current local-keyed run no longer produces. Read the window, diff against the
@@ -2720,7 +2654,7 @@ final class IntelligenceEngine: ObservableObject {
         // covers the window, so eviction runs exactly as before; `persistComputedScores` is guarded the
         // same way, so an empty pass leaves the persisted window untouched. Twin of the Android
         // WhoopDao.replaceComputedScoreWindow empty guard.
-        if !preserveUnscoredHistory && !persistedDailies.isEmpty {
+        if !persistedDailies.isEmpty {
             let freshKeys = Set(persistedDailies.map { $0.day })
             let existingWindow = (try? await store.dailyMetrics(deviceId: computedId, from: oldestDay, to: newestDay)) ?? []
             for stale in existingWindow where !freshKeys.contains(stale.day) {
@@ -3002,14 +2936,7 @@ final class IntelligenceEngine: ObservableObject {
         let cachedSleepKept = cachedSleep.filter { s in
             !skipWindows.contains { s.startTs < $0.end && $0.start < s.endTs }   // time-overlap test
         }
-        do {
-            if !cachedSleepKept.isEmpty {
-                _ = try await store.upsertSleepSessions(cachedSleepKept, deviceId: computedId)
-            }
-        } catch {
-            diagnosticSink?("re-score: sleep persistence failed; history repair remains pending", nil)
-            return
-        }
+        if !cachedSleepKept.isEmpty { _ = try? await store.upsertSleepSessions(cachedSleepKept, deviceId: computedId) }
         // ── Persist per-epoch motion (H8) beside each kept session's stagesJSON ──────────────────────────
         // The sleepSession rows exist now (just upserted), so the targeted motion UPDATE lands. Persist ONLY
         // for the sessions actually kept (not edited/dismissed), keyed by the detected start `analyzeDay`
@@ -3181,7 +3108,6 @@ final class IntelligenceEngine: ObservableObject {
             diagnosticSink?("re-score: debt NOT settled — a newer re-score was recorded while this pass "
                             + "was running, so the mark stays and another pass will run (#1681)", nil)
         }
-        if !Task.isCancelled && !pendingForcedRescore { onPersisted?() }
     }
 
     /// UserDefaults key for the #836 idle-tick gate: the complete raw-analysis fingerprint the last completed
