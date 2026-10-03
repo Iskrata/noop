@@ -553,6 +553,16 @@ final class AppModel: ObservableObject {
             }
             _ = await self.intelligence.runEffortRescoreIfNeeded(historyDays: historyDays,
                                                                  flagKey: IntelligenceEngine.personalSleepScoreRescoreFlagKey)
+            // One-shot rescore after the 2026-10-03 measurement changes (deep base prior 0.18 → 0.15, the
+            // day's resting HR from the deep-sleep mean to the whole-session mean). Without it the computed
+            // history keeps the old statistics and every trend shows a step on the day of the build rather
+            // than anything that happened to the wearer. Stages and resting HR both reach Apple Health, so
+            // the history rewrite is owed too.
+            if await self.intelligence.runEffortRescoreIfNeeded(historyDays: historyDays,
+                                                               flagKey: IntelligenceEngine.stagingRecipeRescoreFlagKey) {
+                UserDefaults.standard.set(true, forKey: IntelligenceEngine.healthHistoryRewriteOwedKey)
+                UserDefaults.standard.set(true, forKey: IntelligenceEngine.restingHRHealthRewriteOwedKey)
+            }
             while !Task.isCancelled {
                 // #547 RE-POLLUTION: a sync since the last tick may have armed a re-heal (its ingest gate
                 // dropped bad-clock records). `runTimestampHealIfNeeded` honours the pending flag even after

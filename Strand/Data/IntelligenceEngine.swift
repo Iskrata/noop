@@ -684,6 +684,16 @@ final class IntelligenceEngine: ObservableObject {
     /// consistency (`PersonalSleepScore`). Sleep scores never reach Apple Health, so no rewrite is owed.
     static let personalSleepScoreRescoreFlagKey = "intelligence.personalSleepScoreRescore.v1.done"
 
+    /// One-shot full-history rescore after a change to how a night is MEASURED, so the history and the
+    /// nights after it are the same measurement and a trend is a trend rather than the step where the
+    /// recipe changed. The key carries what changed; a later change gets its own key.
+    ///
+    /// `deepPrior015RHRMean`: the deep base prior went 0.18 → 0.15 (upstream's PSG evidence, taken without
+    /// the fork's compensating term, so deep reads ≈ 2 pp lower), and the day's resting HR went from the
+    /// primary night's deep-sleep mean to its whole-session mean (≈ 3.6 bpm higher here). Both reach Apple
+    /// Health, so the rewrite is owed with it.
+    static let stagingRecipeRescoreFlagKey = "intelligence.stagingRecipeRescore.deepPrior015RHRMean.done"
+
     /// Set once a full-history rescore completes; the Apple Health write-back then reaches back to the first
     /// computed night once, so nights older than its rolling window are replaced too, and clears it.
     static let healthHistoryRewriteOwedKey = "noop.health.historyRewriteOwed.v1"
