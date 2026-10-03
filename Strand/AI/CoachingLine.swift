@@ -24,11 +24,15 @@ extension AICoachEngine {
     /// Bumped when what the line is written from changes, so the day's line is rewritten once. v2: written
     /// only from today's own scores after the night closes (`OpenNight`); v1 could be written from a
     /// carried Charge or a night still being recorded ("short sleep at 4.9h" on an 8.4 h night).
-    private static let coachingVersion = "v2"
+    private static let coachingVersion = "v3"
 
     /// Today's line: the cached one, or — once `charge` and `rest` are both known — one request per day.
+    ///
+    /// Keyed by the day, today's Charge and the half-hour of last night, since the line cites all three: a
+    /// night that grows after it read as finished rewrites the line once rather than quoting "4.9h" all day.
     func coachingLine(dayKey: String, charge: Double?, rest: Double?) async -> String? {
-        let fingerprint = dayKey + "|" + Self.coachingVersion
+        let asleep = repo.days.last { $0.day == dayKey }?.totalSleepMin
+        let fingerprint = Self.coachingFingerprint(dayKey: dayKey, charge: charge, asleepMin: asleep)
         if let cached = cachedReply(slot: "today", fingerprint: fingerprint) { return cached }
         guard let charge, let rest else { return nil }   // scores not in yet — wait for the fresh ones
         return await cachedReply(slot: "today", fingerprint: fingerprint, prompt: {
@@ -38,6 +42,12 @@ extension AICoachEngine {
     }
 
     // MARK: Pure helpers (unit-tested)
+
+    static func coachingFingerprint(dayKey: String, charge: Double?, asleepMin: Double?) -> String {
+        let chargeKey = charge.map { String(Int($0.rounded())) } ?? "-"
+        let sleepKey = asleepMin.map { String(Int(($0 / 30).rounded(.down))) } ?? "-"
+        return "\(dayKey)|\(chargeKey)|\(sleepKey)|\(coachingVersion)"
+    }
 
     /// Today's numbers beside their 7- and 30-day averages (today excluded from the averages), plus
     /// yesterday's effort — the comparison the line should be built on. `charge` / `rest` are the scores

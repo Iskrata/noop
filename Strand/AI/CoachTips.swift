@@ -101,11 +101,14 @@ extension AICoachEngine {
     """
 
     /// Bumped when the sleep prompt changes, so the day's tips are rewritten once under the new rules.
-    private static let sleepPromptVersion = "v2"
+    private static let sleepPromptVersion = "v3"
 
     /// Tips for the week ending on `wakeDay` (the latest scored night).
     func sleepWeekTips(wakeDay: String) async -> [String]? {
-        let reply = await cachedReply(slot: "sleep", fingerprint: Self.sleepFingerprint(wakeDay), prompt: {
+        let night = repo.days.last { $0.day == wakeDay }
+        let reply = await cachedReply(slot: "sleep",
+                                      fingerprint: Self.sleepFingerprint(wakeDay, asleepMin: night?.totalSleepMin),
+                                      prompt: {
             let to = Int(Date().timeIntervalSince1970), from = to - 8 * 86_400
             // Both sources: nights imported from Apple Health can lag the strap's own, and last night must
             // carry its bed and wake times. The digest keeps the longest session per wake day.
@@ -121,10 +124,21 @@ extension AICoachEngine {
         return reply.map { Self.tipLines($0, max: 3) }
     }
 
-    static func sleepFingerprint(_ wakeDay: String) -> String { wakeDay + "|" + sleepPromptVersion }
+    /// The tips are cached per wake day AND per half-hour of the night they describe. A night that keeps
+    /// growing after it was read as finished (a doze that the stager closed and then reopened: on
+    /// 2026-10-03 the tips opened with "last night 1.8h" for a night that ran to 9 h) rewrites them once
+    /// instead of standing wrong all day. Bucketed, so the ten-minute offloads of one night do not each
+    /// buy a request.
+    static func sleepFingerprint(_ wakeDay: String, asleepMin: Double?) -> String {
+        let bucket = asleepMin.map { String(Int(($0 / 30).rounded(.down))) } ?? "-"
+        return "\(wakeDay)|\(bucket)|\(sleepPromptVersion)"
+    }
 
     func cachedSleepWeekTips(wakeDay: String) -> [String]? {
-        cachedReply(slot: "sleep", fingerprint: Self.sleepFingerprint(wakeDay)).map { Self.tipLines($0, max: 3) }
+        let night = repo.days.last { $0.day == wakeDay }
+        return cachedReply(slot: "sleep",
+                           fingerprint: Self.sleepFingerprint(wakeDay, asleepMin: night?.totalSleepMin))
+            .map { Self.tipLines($0, max: 3) }
     }
 
     /// The last 7 nights: bed/wake (local), hours vs need, efficiency, stages, score, consistency, HRV, RHR,

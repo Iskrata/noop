@@ -116,12 +116,17 @@ enum UnitPrefs {
     }
 
     /// Whether the live-HR Live Activity (Lock Screen + Dynamic Island) may show, iOS only (#336).
-    /// Defaults to ON. The user can turn it off in Settings → Live notifications without digging into iOS
-    /// Settings — `liveActivityEnabled()` reads it default-true so an unset key keeps the old behaviour.
+    ///
+    /// Upstream defaults it ON and starts the banner on every foreground with the strap connected
+    /// (`LiveHRBannerLifecycle.step`), which reads as "it appeared by itself" to anyone who never asked for
+    /// a heart rate on their Lock Screen: NOOP is connected all day, so the banner is permanent. Fork:
+    /// defaults to OFF, like the sync banner below. The Settings switch (Live notifications → Live heart
+    /// rate) turns it on, and from then on it behaves exactly as upstream describes.
     static let liveActivityKey = "liveActivity.enabled"
+    static let liveActivityDefault = false
     static func liveActivityEnabled() -> Bool {
         UserDefaults.standard.object(forKey: liveActivityKey) == nil
-            ? true : UserDefaults.standard.bool(forKey: liveActivityKey)
+            ? liveActivityDefault : UserDefaults.standard.bool(forKey: liveActivityKey)
     }
 
     /// Whether the strap-sync Live Activity may show, iOS only. Its own switch, deliberately separate from
