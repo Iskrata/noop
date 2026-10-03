@@ -202,6 +202,16 @@ public enum SleepStagerV2 {
         /// share across 24 NOOP nights (2026-08-24 to 2026-09-16, replayed through
         /// `SleepStager.detectSleep` with V2) rather than night against night. These offsets give deep 19.6
         /// / REM 28.6 / light 51.8, with deep at 97 ± 14 min a night against WHOOP's 95 ± 19.
+        ///
+        /// FORK: the fit was made against a deep base prior of 0.18. Upstream lowered that prior to 0.15 on
+        /// human-scored PSG (n = 31, pooled deep 18.94 % → 15.09 % against a truth of 13.76 %, kappa 0.363 →
+        /// 0.371, higher for 21 of 31 subjects — `Tools/SleepPSG`), and the fork takes it WITHOUT the
+        /// compensating `log(0.18 / 0.15)` term the 2026-09-29 sync carried, deliberately: the fit's target
+        /// was this wearer's WHOOP history, and WHOOP itself over-calls deep against PSG. Deep therefore
+        /// lands between the two (≈ 17.5 % of asleep rather than 19.6 %), closer to the lab. Nothing in the
+        /// Sleep score moves (it reads asleep minutes, efficiency and consistency only); Charge's sleep term
+        /// loses ≈ 1 % through the restorative (deep + REM) share, and the deep-adequacy floor (13 %) is
+        /// still cleared.
         public static let personal = Calibration(deepLogBias: -0.60, remLogBias: -0.30)
     }
     static let deepGateSlope = 5.0
