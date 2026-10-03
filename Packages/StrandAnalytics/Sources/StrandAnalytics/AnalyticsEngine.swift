@@ -706,21 +706,13 @@ public enum AnalyticsEngine {
         // call site" a scattered filter invites.
         let physiologyOnly = matched.filter { !$0.hrOnly }
         let physiologySessions = physiologyOnly.isEmpty ? matched : physiologyOnly
-        // Resting Heart Rate, from the PRIMARY (longest) sleep session, which keeps a short low-HR nap
-        // from supplying the day's figure (#1169/#2358). #804: a ring's own value still wins.
-        //
-        // FORK (owner's choice, 2026-09-29, kept across the 2026-09-29 upstream revert): the session's
-        // DEEP-SLEEP mean (`SleepStager.sessionDeepSleepRestingHR`), not upstream's five-minute floor
-        // (#2522) and not #1169's whole-session sample mean. On 37 nights: deep mean 54.6 with a
-        // night-to-night change sd of 5.3, whole-session mean 58.3 / 4.0, lowest five-minute bin 49.2,
-        // against the WHOOP app's own 56.3 / 4.9 over a non-overlapping stretch. WHOOP 4.0 reports a
-        // sleep average weighted toward the last slow-wave stage, so the deep mean is both the closest
-        // match and the same measurement. The whole-session mean stands in when a night stages no deep.
-        let primarySession = physiologySessions.max(by: { ($0.end - $0.start) < ($1.end - $1.start) })
-        let providedPrimaryRHR = primarySession
+        // Resting Heart Rate: Use PrimarySessionRestingHR (arithmetic sample mean of the longest/primary
+        // sleep session, #1169), eliminating daytime nap floor distortion.
+        // #804: Preserve ring/device-provided resting HR when present in `providedSleep`.
+        // Cleanly falls back to physiologySessions.compactMap { $0.restingHR }.min() when coverage is sparse.
+        let providedPrimaryRHR = physiologySessions.max(by: { ($0.end - $0.start) < ($1.end - $1.start) })
             .flatMap { p in providedSleep.first(where: { $0.start == p.start && $0.end == p.end })?.restingHR }
         let restingHRDaily: Int? = providedPrimaryRHR
-            ?? primarySession?.restingHR
             ?? primarySessionRestingHR(sessions: physiologySessions, hr: hr).map { Int($0.rounded()) }
             ?? physiologySessions.compactMap { $0.restingHR }.min()
         // Daily avg HRV = in-bed-weighted mean of per-session avg HRV.
