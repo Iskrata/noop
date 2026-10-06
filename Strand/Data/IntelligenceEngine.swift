@@ -329,14 +329,14 @@ final class IntelligenceEngine: ObservableObject {
         return n % 2 == 1 ? s[n / 2] : (s[n / 2 - 1] + s[n / 2]) / 2
     }
 
-    /// The per-day resting-HR diagnostic line (#691). NOOP's resting HR (`rhr`) is the mean HR across the
-    /// night's deep-sleep segments (`SleepStager.sessionDeepSleepRestingHR`), the window WHOOP measures in.
-    /// Beside it: `floor`, the lowest 5-min bin, which NOOP reported as resting HR until it read ~6 bpm under
-    /// WHOOP's; and `nightMean`, the mean over the whole in-bed span, which a "sleeping HR" app reports. All
-    /// three on one line make a "NOOP reads differently from my other app" report explainable from the strap
-    /// log. `inBedBpms` is the bpm of every HR sample inside a matched in-bed session. Empty in-bed →
-    /// nightMean is "nil"; no floor → "nil". Counts/bpm only, no timestamps or PII. Pure so it's unit-tested
-    /// directly and is the SAME line `analyzeRecent` ships. Byte-identical to the Android `rhrFloorMeanLogLine`.
+    /// The per-day resting-HR diagnostic line (#691). FORK: NOOP's resting HR (`rhr`) is the whole-session
+    /// sample mean of the primary night (`AnalyticsEngine.primarySessionRestingHR`, 17bac2e89). Beside it:
+    /// `deepMean`, the primary session's deep-sleep mean (its stored `restingHr`, what the day reported until
+    /// 2026-10-03), so the two estimators stay comparable night by night; `floor`, the lowest 5-min bin; and
+    /// `nightMean`, the mean over every matched in-bed span (equals `rhr` on a one-session night). `inBedBpms`
+    /// is the bpm of every HR sample inside a matched in-bed session. Empty in-bed → nightMean is "nil"; no
+    /// floor / no deep mean → "nil". Counts/bpm only, no timestamps or PII. Pure so it's unit-tested directly
+    /// and is the SAME line `analyzeRecent` ships. FORK: diverges from the Android `rhrFloorMeanLogLine`.
     /// #1331 diagnostic line: the night's computed respiratory rate (breaths/min) or "nil".
     ///
     /// When the rate is nil the line now carries WHY, because "nil" on its own sent an investigation
@@ -371,12 +371,14 @@ final class IntelligenceEngine: ObservableObject {
         return "\(base) beatAccurate=\(acc)>=\(gate) rrIntegrity=\(integrity) — gate passed, cause is elsewhere"
     }
 
-    nonisolated static func rhrFloorMeanLogLine(day: String, restingHr: Int, floor: Int?, inBedBpms: [Int]) -> String {
+    nonisolated static func rhrFloorMeanLogLine(day: String, restingHr: Int, deepMean: Int?, floor: Int?,
+                                                inBedBpms: [Int]) -> String {
         let meanLog: String = inBedBpms.isEmpty ? "nil"
             : String(Int((Double(inBedBpms.reduce(0, +)) / Double(inBedBpms.count)).rounded()))
-        return "rhr day=\(day) rhr=\(restingHr) floor=\(floor.map(String.init) ?? "nil") nightMean=\(meanLog) "
-            + "inBedSamples=\(inBedBpms.count) "
-            + "(rhr = deep-sleep mean = NOOP RHR; floor = lowest 5-min bin; mean = whole in-bed span)"
+        return "rhr day=\(day) rhr=\(restingHr) deepMean=\(deepMean.map(String.init) ?? "nil") "
+            + "floor=\(floor.map(String.init) ?? "nil") nightMean=\(meanLog) inBedSamples=\(inBedBpms.count) "
+            + "(rhr = primary-session mean = NOOP RHR; deepMean = primary-session deep-sleep mean; "
+            + "floor = lowest 5-min bin; mean = whole in-bed span)"
     }
 
     /// #1244: one line for a day that CLEARED the ≥200-HR gate yet detected NO in-bed session, so the
@@ -1801,16 +1803,12 @@ final class IntelligenceEngine: ObservableObject {
                         ticksPerStep: up.stepTicksPerStep)
                 }
                 // ── RHR floor-vs-mean diagnostic (#691) ────────────────────────────────────────────────
-                // Make the recurring "NOOP's resting HR reads LOWER than my sleeping-HR app" reports
-                // explainable from the strap log instead of a guess. The two numbers measure different
-                // things BY DESIGN, not a bug: NOOP's `restingHr` is the WHOOP-style FLOOR (the lowest
-                // sustained 5-min in-bed level , SleepStager picks the min 5-min rolling-mean HR per session,
-                // and the day takes the .min() across them), whereas a "sleeping HR" app reports the night
-                // MEAN over the whole asleep span. The mean always sits above the floor, so NOOP looking
-                // lower is correct. Log BOTH so a report ships proof of the gap. Mean is computed over the
-                // SAME matched in-bed span the floor came from (so they're directly comparable); a night
-                // with no banked floor (no matched sleep) logs nil and the line is skipped. Logging only ,
-                // no scoring change. Counts/bpm only; no timestamps or PII (LiveState.append also scrubs).
+                // Make "NOOP's resting HR reads differently from my other app" reports explainable from
+                // the strap log instead of a guess. FORK: the day's `restingHr` is the primary session's
+                // whole-session mean; the line carries the deep-sleep mean and the lowest 5-min bin beside
+                // it, all over the SAME matched in-bed spans, so any estimator can be compared on paired
+                // nights. A day with no resting HR skips the line. Logging only, no scoring change.
+                // Counts/bpm only; no timestamps or PII (LiveState.append also scrubs).
                 // Computed here (pure inputs) and carried out so the main actor can replay it through
                 // `diagnosticSink` in the SAME per-day order , the sink is a MainActor-bound closure.
                 var rhrLine: String?
@@ -1819,13 +1817,15 @@ final class IntelligenceEngine: ObservableObject {
                     let inBedBpms = hr.filter { s in
                         res.cachedSleep.contains { s.ts >= $0.startTs && s.ts < $0.endTs }
                     }.map { $0.bpm }
-                    // The lowest-bin floor, taken the way the day took its resting HR before it became the
-                    // deep-sleep mean (min across the night's sessions), so the two sit side by side.
+                    // The lowest-bin floor, taken the way upstream takes its resting HR (min across the
+                    // night's sessions), and the primary (longest) session's stored deep-sleep mean.
                     let floor = res.cachedSleep.compactMap {
                         SleepStager.sessionRestingHR(start: $0.startTs, end: $0.endTs, hr: hr)
                     }.min()
-                    rhrLine = Self.rhrFloorMeanLogLine(day: res.daily.day, restingHr: restingHr, floor: floor,
-                                                       inBedBpms: inBedBpms)
+                    let deepMean = res.cachedSleep.max(by: { ($0.endTs - $0.startTs) < ($1.endTs - $1.startTs) })?
+                        .restingHr
+                    rhrLine = Self.rhrFloorMeanLogLine(day: res.daily.day, restingHr: restingHr, deepMean: deepMean,
+                                                       floor: floor, inBedBpms: inBedBpms)
                     // #1943: conformance check that the gate `sessionRestingHR` now applies agrees with
                     // the floor it produced. Silent when the gate is correctly applied.
                     if let floor {

@@ -39,11 +39,11 @@ stages, HRV, resting HR, heartbeat series). Charge/Effort/Rest themselves are no
   `RecoveryScorer` wRHR 0.05 / K 1.34 / Z0 −0.61, and unlabelled legacy WHOOP 5 R-R is scored
   (`WhoopStore.scoresUnlabelledWhoop5Legacy`). The personal sleep calibration sits on upstream's 0.15 deep prior
   (owner's choice, 2026-09-29; the fit was made against 0.18, so deep reads a little under WHOOP's share).
-- Resting HR = the primary night's deep-sleep mean (a session's `restingHR`), not upstream's lowest 5-min bin
-  (#2522) nor the whole-night mean. Owner's choice 2026-09-29, on 37 nights: deep mean 54.6 / night-to-night
-  change sd 5.3, whole-night 58.3 / 4.0, lowest bin 49.2, against the WHOOP app's 56.3 / 4.9 (Jun–Aug, no
-  overlapping nights). WHOOP 4.0 uses a sleep average weighted toward the last slow-wave stage and read 1.4 bpm
-  under an all-night ECG mean (PMC12367097).
+- Resting HR = the primary night's whole-session mean HR (`AnalyticsEngine.primarySessionRestingHR`), not the
+  deep-sleep mean the session stores as `restingHr` (the day's figure 2026-09-29 → 2026-10-03) nor upstream's lowest
+  5-min bin (#2522). Owner's choice 2026-10-03 (17bac2e89): WHOOP 4.0 read 1.41 bpm under an all-night ECG mean
+  (PMC12367097), so the WHOOP app's 56.3 implies a true mean near 57.7; on 37 nights whole-session 58.3, deep mean
+  54.6, lowest bin 49.2. The strap log's `rhr` line carries all three (`rhr`, `deepMean`, `floor`) per day.
 - UI: WHOOP black palette (`NoopVisualStyle`), day-cycle sky off, hide-scores switch, Today Activities list
   (`DayActivities*`; AUTO bouts trimmed/split to minutes the strap saw steps or wrist motion,
   `DayActivityMotionTrim`), Sleep Consistency pinned with a 7-night bedtime/wake sheet, Effort target band, tabs

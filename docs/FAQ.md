@@ -8,23 +8,24 @@ Answers to the questions that come up most often in issues. If your question isn
 
 ## Why does NOOP's resting heart rate differ from the WHOOP app's?
 
-**It should now sit within a couple of bpm.** NOOP's resting HR is your **mean heart rate across the night's
-deep (slow-wave) sleep**, the window WHOOP measures in. NOOP's sleep staging is its own approximation, so
-the deep-sleep windows it picks are not WHOOP's exactly, and a small gap either way is expected.
+**It should sit within a couple of bpm, usually slightly above.** NOOP's resting HR is your **mean heart rate
+across the night's main sleep session**. A validation study found WHOOP 4.0's own figure about 1.4 bpm under
+an all-night ECG average (PMC12367097), so NOOP's whole-night mean is expected to read a little over WHOOP's.
 
-Earlier versions reported the **lowest 5-minute average** of the night instead. That is the single calmest
-stretch, not a resting level, and read about 6–8 bpm under WHOOP's. Updating recomputes your stored nights
-once, and on iPhone replaces the resting HR NOOP wrote to Apple Health.
+Earlier versions reported the mean across the night's **deep (slow-wave) sleep** only, and before that the
+**lowest 5-minute average**. Both read under WHOOP's (about 2 and 6–8 bpm), and both depend on NOOP's own
+staging choosing the deep or calmest windows. Updating recomputes your stored nights once, and on iPhone
+replaces the resting HR NOOP wrote to Apple Health.
 
-Your strap log carries all three figures for each night:
+Your strap log carries all four figures for each night:
 
 ```
-rhr day=2026-09-15 rhr=55 floor=48 nightMean=57 inBedSamples=33536
-(rhr = deep-sleep mean = NOOP RHR; floor = lowest 5-min bin; mean = whole in-bed span)
+rhr day=2026-10-06 rhr=61 deepMean=56 floor=51 nightMean=61 inBedSamples=36770
+(rhr = primary-session mean = NOOP RHR; deepMean = primary-session deep-sleep mean; floor = lowest 5-min bin; mean = whole in-bed span)
 ```
 
-`rhr` is what NOOP shows you. `nightMean` is the whole-night average a sleeping-heart-rate app reports, and
-`floor` is the old lowest-5-minute figure.
+`rhr` is what NOOP shows you. `deepMean` and `floor` are the earlier methods, and `nightMean` averages every
+in-bed span of the night (the same as `rhr` when you slept in one session).
 
 ## Why is my HRV different from the WHOOP app's?
 
