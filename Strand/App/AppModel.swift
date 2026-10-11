@@ -563,6 +563,12 @@ final class AppModel: ObservableObject {
                 UserDefaults.standard.set(true, forKey: IntelligenceEngine.healthHistoryRewriteOwedKey)
                 UserDefaults.standard.set(true, forKey: IntelligenceEngine.restingHRHealthRewriteOwedKey)
             }
+            // Same again for the 2026-10-11 WHOOP-scale resting-HR offset: rewrite the computed history and
+            // Apple Health's resting HR so neither shows a 2 bpm step on the day of the build.
+            if await self.intelligence.runEffortRescoreIfNeeded(historyDays: historyDays,
+                                                               flagKey: IntelligenceEngine.whoopRHROffsetRescoreFlagKey) {
+                UserDefaults.standard.set(true, forKey: IntelligenceEngine.restingHRHealthRewriteOwedKey)
+            }
             while !Task.isCancelled {
                 // #547 RE-POLLUTION: a sync since the last tick may have armed a re-heal (its ingest gate
                 // dropped bad-clock records). `runTimestampHealIfNeeded` honours the pending flag even after

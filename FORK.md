@@ -44,10 +44,14 @@ stages, HRV, resting HR, heartbeat series). Charge/Effort/Rest themselves are no
   5-min bin (#2522). Owner's choice 2026-10-03 (17bac2e89): WHOOP 4.0 read 1.41 bpm under an all-night ECG mean
   (PMC12367097), so the WHOOP app's 56.3 implies a true mean near 57.7; on 37 nights whole-session 58.3, deep mean
   54.6, lowest bin 49.2. The strap log's `rhr` line carries all three (`rhr`, `deepMean`, `floor`) per day.
+  Then 2.2 bpm is subtracted (`AnalyticsEngine.forkWhoopRestingHROffsetBpm`, owner's choice 2026-10-11) so it reads on
+  WHOOP's scale: WHOOP's imported RHR averaged 56.3 over its last 14/30/90/365 days, NOOP's mean 58.5 over its 48
+  computed days. The raw mean stays in metricSeries `rhr_primary_session` and the log's `nightMean`.
+- Today's date opens a month recovery calendar (`RecoveryMonthCalendar`), days tinted by recovery, ‹ › through months.
 - UI: WHOOP black palette (`NoopVisualStyle`), day-cycle sky off, hide-scores switch, Today Activities list
   (`DayActivities*`; AUTO bouts trimmed/split to minutes the strap saw steps or wrist motion,
   `DayActivityMotionTrim`), Sleep Consistency pinned with a 7-night bedtime/wake sheet, Effort target band, tabs
-  Today · Zones · Trends · Lab · More (Coach is the top row of More), Start-session row off.
+  Today · Zones · Stress · Lab · More (Coach is the top row of More, Trends the first Insights row), Start-session row off.
 - Lab tab (`StrandiOS/Biology/`, titled "Lab"): bloodwork from the Lab Book store grouped by body system, report-range
   bars and history chart; "Scan lab report" OCRs photos/PDF pages on device, blanks personal lines (user can
   toggle each), sends the redacted pages to OpenAI (`gpt-5`, strict JSON schema, `LabReportScan`), converts to

@@ -17,7 +17,7 @@ final class IntelligenceRhrFloorMeanTests: XCTestCase {
                                          inBedBpms: bpms)
         XCTAssertEqual(line,
             "rhr day=2026-06-12 rhr=55 deepMean=51 floor=48 nightMean=55 inBedSamples=7 "
-            + "(rhr = primary-session mean = NOOP RHR; deepMean = primary-session deep-sleep mean; "
+            + "(rhr = NOOP RHR = primary-session mean - 2.2 WHOOP offset; deepMean = primary-session deep-sleep mean; "
             + "floor = lowest 5-min bin; mean = whole in-bed span)")
     }
 
@@ -35,7 +35,7 @@ final class IntelligenceRhrFloorMeanTests: XCTestCase {
                                           inBedBpms: [])
         XCTAssertEqual(line,
             "rhr day=2026-06-12 rhr=47 deepMean=nil floor=nil nightMean=nil inBedSamples=0 "
-            + "(rhr = primary-session mean = NOOP RHR; deepMean = primary-session deep-sleep mean; "
+            + "(rhr = NOOP RHR = primary-session mean - 2.2 WHOOP offset; deepMean = primary-session deep-sleep mean; "
             + "floor = lowest 5-min bin; mean = whole in-bed span)")
     }
 

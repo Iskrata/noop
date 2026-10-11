@@ -712,8 +712,10 @@ public enum AnalyticsEngine {
         // Cleanly falls back to physiologySessions.compactMap { $0.restingHR }.min() when coverage is sparse.
         let providedPrimaryRHR = physiologySessions.max(by: { ($0.end - $0.start) < ($1.end - $1.start) })
             .flatMap { p in providedSleep.first(where: { $0.start == p.start && $0.end == p.end })?.restingHR }
+        // FORK: the whole-session mean less `forkWhoopRestingHROffsetBpm`, so the figure reads on WHOOP's scale.
         let restingHRDaily: Int? = providedPrimaryRHR
-            ?? primarySessionRestingHR(sessions: physiologySessions, hr: hr).map { Int($0.rounded()) }
+            ?? primarySessionRestingHR(sessions: physiologySessions, hr: hr)
+                .map { Int(($0 - forkWhoopRestingHROffsetBpm).rounded()) }
             ?? physiologySessions.compactMap { $0.restingHR }.min()
         // Daily avg HRV = in-bed-weighted mean of per-session avg HRV.
         let avgHRVDaily: Double? = {
@@ -1427,6 +1429,15 @@ public enum AnalyticsEngine {
         guard kept > 0 else { return nil }
         return (mean: Int((Double(sum) / Double(kept)).rounded()), samples: kept)
     }
+
+    /// FORK (owner's choice, 2026-10-11): bpm taken off the primary-session mean before it becomes the day's
+    /// resting HR, so NOOP reads on the WHOOP app's scale. Measured on the owner's phone DB: WHOOP's own RHR
+    /// averaged 56.3 over its last 14, 30, 90 and 365 imported days alike (2023-10-12 → 2026-08-23); NOOP's
+    /// whole-session mean averaged 58.5 over its 48 computed days (2026-08-25 → 2026-10-11). The nights do not
+    /// overlap, but WHOOP's figure held flat across every window, so the 2.2 gap is the method, not the
+    /// wearer. A constant shift cancels out of recovery and stress (both score RHR against the same stored
+    /// history), so only the displayed value, Fitness Age and what reaches Apple Health move.
+    public static let forkWhoopRestingHROffsetBpm = 2.2
 
     /// #1169 SHADOW METRIC: the primary-session MEAN resting HR — window each detected sleep session's HR
     /// samples to `[start, end)` and delegate to the #1174-defined `PrimarySessionRestingHR.meanHR` (that

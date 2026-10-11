@@ -330,7 +330,8 @@ final class IntelligenceEngine: ObservableObject {
     }
 
     /// The per-day resting-HR diagnostic line (#691). FORK: NOOP's resting HR (`rhr`) is the whole-session
-    /// sample mean of the primary night (`AnalyticsEngine.primarySessionRestingHR`, 17bac2e89). Beside it:
+    /// sample mean of the primary night (`AnalyticsEngine.primarySessionRestingHR`, 17bac2e89) less the WHOOP-scale
+    /// offset (`AnalyticsEngine.forkWhoopRestingHROffsetBpm`, 2026-10-11); the raw mean stays in `nightMean`. Beside it:
     /// `deepMean`, the primary session's deep-sleep mean (its stored `restingHr`, what the day reported until
     /// 2026-10-03), so the two estimators stay comparable night by night; `floor`, the lowest 5-min bin; and
     /// `nightMean`, the mean over every matched in-bed span (equals `rhr` on a one-session night). `inBedBpms`
@@ -377,7 +378,7 @@ final class IntelligenceEngine: ObservableObject {
             : String(Int((Double(inBedBpms.reduce(0, +)) / Double(inBedBpms.count)).rounded()))
         return "rhr day=\(day) rhr=\(restingHr) deepMean=\(deepMean.map(String.init) ?? "nil") "
             + "floor=\(floor.map(String.init) ?? "nil") nightMean=\(meanLog) inBedSamples=\(inBedBpms.count) "
-            + "(rhr = primary-session mean = NOOP RHR; deepMean = primary-session deep-sleep mean; "
+            + "(rhr = NOOP RHR = primary-session mean - \(AnalyticsEngine.forkWhoopRestingHROffsetBpm) WHOOP offset; deepMean = primary-session deep-sleep mean; "
             + "floor = lowest 5-min bin; mean = whole in-bed span)"
     }
 
@@ -695,6 +696,11 @@ final class IntelligenceEngine: ObservableObject {
     /// primary night's deep-sleep mean to its whole-session mean (≈ 3.6 bpm higher here). Both reach Apple
     /// Health, so the rewrite is owed with it.
     static let stagingRecipeRescoreFlagKey = "intelligence.stagingRecipeRescore.deepPrior015RHRMean.done"
+
+    /// One-shot full-history rescore after the day's resting HR took the WHOOP-scale offset
+    /// (`AnalyticsEngine.forkWhoopRestingHROffsetBpm`, 2026-10-11), so the computed history moves with it and
+    /// Apple Health's resting HR is rewritten rather than stepping down on the day of the build.
+    static let whoopRHROffsetRescoreFlagKey = "intelligence.whoopRHROffsetRescore.v1.done"
 
     /// Set once a full-history rescore completes; the Apple Health write-back then reaches back to the first
     /// computed night once, so nights older than its rolling window are replaced too, and clears it.
