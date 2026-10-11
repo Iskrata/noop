@@ -1316,12 +1316,9 @@ struct TodayView: View {
             .popover(isPresented: $showDayPicker) {
                 // Cap at the LOGICAL day (not raw Date()) so the calendar never offers a day ahead of the
                 // data in the 00:00-04:00 window, matching the visible date + a11y label (#16).
-                DatePicker("", selection: dayPickerBinding, in: ...Repository.logicalDay(Date()),
-                           displayedComponents: [.date])
-                    .datePickerStyle(.graphical).labelsHidden().padding(12)
-                    // #840, give the graphical picker an explicit size so the iPad popover bubble doesn't
-                    // clip the calendar grid (anchored to a 13pt label it otherwise sizes too small).
-                    .frame(minWidth: 320, minHeight: 360)
+                // Fork: a month recovery map instead of the plain graphical DatePicker; a tap still picks the day.
+                RecoveryMonthCalendar(days: repo.days, selected: selectedLogicalDay,
+                                      maxDate: Repository.logicalDay(Date())) { dayPickerBinding.wrappedValue = $0 }
             }
 
             Spacer(minLength: 8)

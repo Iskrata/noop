@@ -607,12 +607,9 @@ struct LiquidTodayView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("\(headerTitle). Tap to pick a day, swipe to change day.")
             .popover(isPresented: $showDayPicker) {
-                DatePicker("", selection: dayPickerBinding, in: ...Repository.logicalDay(Date()),
-                           displayedComponents: [.date])
-                    .datePickerStyle(.graphical)
-                    .labelsHidden()
-                    .padding(12)
-                    .frame(minWidth: 320, minHeight: 360)
+                // Fork: a month recovery map instead of the plain graphical DatePicker; a tap still picks the day.
+                RecoveryMonthCalendar(days: repo.days, selected: selectedLogicalDay,
+                                      maxDate: Repository.logicalDay(Date())) { dayPickerBinding.wrappedValue = $0 }
                     .liquidPopoverAdaptation()
             }
         }
