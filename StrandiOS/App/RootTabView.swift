@@ -126,12 +126,13 @@ struct RootTabView: View {
         // its dynamic interaction with scrolling content automatically; older supported releases use
         // the corresponding system material and safe-area behaviour from the same TabView.
         TabView(selection: nativeTabSelection) {
-            // Fork order: Today, Zones, Trends, Biology, More. Sleep left the bar: Today's Rest score and the
+            // Fork order: Today, Zones, Stress, Lab, More (Stress took Trends' slot 2026-10-11; Trends is a
+            // More row). Sleep left the bar: Today's Rest score and the
             // Activities sleep row push it, and it has a More row. Coach moved to the top of More (and still
             // opens as a sheet from its notification and the Today launcher).
             tab(todayTabRoot, "Today", "square.grid.2x2", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
             tab(ZonesView(), "Zones", "heart.circle", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
-            tab(TrendsView(), "Trends", "chart.line.uptrend.xyaxis", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
+            tab(StressView(), "Stress", "bolt.heart.fill", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
             tab(BiologyView(), "Lab", "drop.fill", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
             moreTab(path: $tabPaths[4], scrollSignal: scrollTop[4]).tag(4)
         }
@@ -196,7 +197,8 @@ struct RootTabView: View {
             case .devices:
                 showDevices = true
                 router.requestedDestination = nil
-            case .insightsHub, .labBook, .fusedRecord, .rhythm, .alarms:
+            case .insightsHub, .labBook, .fusedRecord, .rhythm, .alarms, .trends:
+                // Fork: Trends left the tab bar for More (2026-10-11), so a request presents it as a pillar sheet.
                 routedPillar = dest
                 router.requestedDestination = nil
             case .coach:
@@ -212,10 +214,6 @@ struct RootTabView: View {
                     break
                 }
                 routedPillar = .coach
-                router.requestedDestination = nil
-            case .trends:
-                // Trends is a primary tab on iPhone (not a pillar sheet) — switch to it.
-                withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = 2 }
                 router.requestedDestination = nil
             case .activeWorkout:
                 // The Today active-workout indicator opens Live through the quick-action Live sheet; once
@@ -309,9 +307,7 @@ struct RootTabView: View {
                 case .fusedRecord: FusedRecordHost()
                 case .rhythm: RhythmHost(onClose: { routedPillar = nil })
                 case .devices: DevicesView()
-                // .trends is never presented as a pillar sheet on iPhone (it's a primary tab — the
-                // requestedDestination handler switches `selectedTab` instead), but the switch must stay
-                // exhaustive. Fall back to Trends inside the sheet host if it ever arrives here.
+                // Fork: Trends is a More row, not a tab, so the router's .trends request lands here.
                 case .trends: TrendsView()
                 // .activeWorkout routes through the quick-action Live sheet (handled above); this keeps the
                 // switch exhaustive and falls back to Live if it ever reaches the pillar host.
@@ -458,6 +454,7 @@ struct RootTabView: View {
                     }
                 }
                 moreSection("Insights") {
+                    MoreRow("Trends", "chart.line.uptrend.xyaxis", .trends)
                     MoreRow("What Moves You", "wand.and.sparkles", .insightsHub)
                     MoreRow("Intelligence", "brain.head.profile", .intelligence)
                     MoreRow("Insights", "lightbulb.fill", .insights)
@@ -472,7 +469,6 @@ struct RootTabView: View {
                     MoreRow("Lift Log", "dumbbell.fill", .liftLog)
                     MoreRow("Health", "heart.text.square.fill", .health)
                     MoreRow("Lab Book", "books.vertical.fill", .labBook)
-                    MoreRow("Stress", "bolt.heart.fill", .stress)
                     MoreRow("Breathe", "wind", .breathe)
                     MoreRow("Intervals", "timer", .intervals)
                     // Experimental beat-to-beat regularity visualization — self-gates on its own consent.
@@ -593,7 +589,7 @@ struct RootTabView: View {
 /// registration in `moreTab`.
 private enum MoreDestination: Hashable {
     case insightsHub, intelligence, insights, explore, compare, sleep
-    case live, workouts, liftLog, health, labBook, stress, breathe, intervals, rhythm, sleepSchedule
+    case live, workouts, liftLog, health, labBook, trends, breathe, intervals, rhythm, sleepSchedule
     case fusedRecord, appleHealth, miBand, dataSources, backupSync, shortcutsExport, noopLimitations
     case alarms, automations, testCentre, siriShortcuts, powerSaving, settings, coach
 
@@ -610,7 +606,7 @@ private enum MoreDestination: Hashable {
         case .liftLog:         LiftLogView()
         case .health:          HealthView()
         case .labBook:         LabBookView()
-        case .stress:          StressView()
+        case .trends:          TrendsView()
         case .breathe:         BreathingView()
         case .intervals:       IntervalTimerView()
         case .rhythm:          RhythmHost()
