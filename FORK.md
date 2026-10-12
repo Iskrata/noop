@@ -47,7 +47,11 @@ stages, HRV, resting HR, heartbeat series). Charge/Effort/Rest themselves are no
   Then 2.2 bpm is subtracted (`AnalyticsEngine.forkWhoopRestingHROffsetBpm`, owner's choice 2026-10-11) so it reads on
   WHOOP's scale: WHOOP's imported RHR averaged 56.3 over its last 14/30/90/365 days, NOOP's mean 58.5 over its 48
   computed days. The raw mean stays in metricSeries `rhr_primary_session` and the log's `nightMean`.
-- Today's date opens a month recovery calendar (`RecoveryMonthCalendar`), days tinted by recovery, ‹ › through months.
+- Today's date opens a month recovery calendar (`RecoveryMonthCalendar`), days tinted by recovery, ‹ › through months;
+  the Stress tab has the same grid by stress band (`StressMonthCalendarCard`, both on `MonthHeatCalendar`) and its
+  Stress Trend line is a short centred rolling mean (`StressTrendSmoothing`).
+- Upstream picked onto `main` ahead of a full merge (2026-10-12): the Charge-baseline window #2525 (df44f0ed7,
+  79b906551, 8931adbc0, 22ce207ef) and the stress fixes 0dd44d9f6, 88654a001, 4d40dda7f, 4bac7105d.
 - UI: WHOOP black palette (`NoopVisualStyle`), day-cycle sky off, hide-scores switch, Today Activities list
   (`DayActivities*`; AUTO bouts trimmed/split to minutes the strap saw steps or wrist motion,
   `DayActivityMotionTrim`), Sleep Consistency pinned with a 7-night bedtime/wake sheet, Effort target band, tabs

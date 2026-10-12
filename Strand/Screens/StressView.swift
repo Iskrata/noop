@@ -253,6 +253,10 @@ struct StressView: View {
             trendSection(model)
                 .staggeredAppear(index: 3)
 
+            // Fork: the month calendar, coloured on the same 0-3 ramp.
+            StressMonthCalendarCard(trend: model.fullTrend)
+                .staggeredAppear(index: 3)
+
             // 5. Transparency — how the number is built.
             methodologyCard(model)
                 .staggeredAppear(index: 4)
@@ -617,12 +621,13 @@ struct StressView: View {
                 let yTop = max(1, peak + 0.3)
                 ChartCard(
                     title: "Stress · \(range.label)",
-                    subtitle: String(localized: "Daily 0-3 proxy"),
+                    subtitle: String(localized: "Daily 0-3 proxy, smoothed"),
                     trailing: String(localized: "avg \(StressTrace.formatLevel(avg))"),
                     tint: StressRamp.calm
                 ) {
+                    // Fork: the line plots a short rolling mean (`StressTrendSmoothing`); the footer stays raw.
                     TrendChart(
-                        points: points,
+                        points: StressTrendSmoothing.smoothed(points),
                         gradient: StressRamp.gradient,
                         valueRange: 0...3,
                         showsArea: true,
